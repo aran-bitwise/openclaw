@@ -164,7 +164,22 @@ sequenceDiagram
 
 All five sources converge on shared routing/session resolution, dispatch/queue handling, and transcript/memory persistence.
 
-## 6) Next step (Milestone 2 handoff)
+## 6) Milestone 1 reference implementation (in this repository)
+
+A lightweight executable reference for the Milestone 1 event model now lives in:
+
+- `src/experiments/flutter-m1/runtime-reference.ts`
+- `src/experiments/flutter-m1/runtime-reference.test.ts`
+
+It demonstrates:
+
+- gateway-style route resolution into `(agentId, channelId, sessionId)`
+- normalization of all five input types into a shared event contract
+- queue lifecycle states (`queued`, `processing`, `completed`, `failed`)
+- idempotency-key deduplication
+- a basic processing loop that updates event status
+
+## 7) Next step (Milestone 2 handoff)
 
 - Implement Flutter domain model skeleton:
   - `AgentProfile`, `Event`, `EventType`, `Session`, `MemoryEntry`, `ToolInvocation`, `RunResult`
