@@ -41,7 +41,8 @@ usage:
 
 #### Deliverables
 
-- Clone and inspect `openclaw/openclaw`
+- Clone and inspect `openclaw/openclaw` _(already completed in this repository)_
+- Milestone 1 architecture mapping document: [Flutter OpenClaw Mobile — Milestone 1 Architecture Mapping](/experiments/plans/flutter-openclaw-m1-architecture-mapping)
 - Produce architecture mapping doc for:
   - Core runtime loop
   - Gateway responsibilities
