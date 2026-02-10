@@ -260,6 +260,14 @@ Acceptance checks:
 
 After this milestone completes, proceed to Gateway abstraction and channel session routing:
 
+- Milestone 3 implementation document: [Flutter OpenClaw Mobile — Milestone 3 Gateway Router and Channel Sessions](/experiments/plans/flutter-openclaw-m3-gateway-router-sessions)
 - add `GatewayRouter` interface in `application/services`
 - wire route resolution into session lookup and event insertion
 - enforce FIFO non-interleaving behavior per session queue key
+
+Milestone 2 dependency handoff to Milestone 3:
+
+- `buildSessionKey(...)` from the Milestone 2 reference becomes the canonical route/session identity primitive.
+- `Milestone2Repository.createSession(...)` provides create-if-missing session behavior for routed events.
+- `Milestone2Repository.appendEvent(...)` provides idempotency-key dedupe at ingestion boundaries.
+- schema migration path (`migrateStore`) remains unchanged; Milestone 3 should avoid schema-breaking changes unless required.

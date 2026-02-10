@@ -100,6 +100,7 @@ usage:
 
 #### Deliverables
 
+- Milestone 3 implementation document: [Flutter OpenClaw Mobile — Milestone 3 Gateway Router and Channel Sessions](/experiments/plans/flutter-openclaw-m3-gateway-router-sessions)
 - Implement `GatewayRouter` abstraction:
   - Accept inbound events from channels
   - Route to `(agentId, channelId, sessionId)`
