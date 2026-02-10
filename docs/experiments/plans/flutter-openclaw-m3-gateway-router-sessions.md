@@ -47,6 +47,21 @@ Reuse from Milestone 2:
 - repository methods (`createSession`, `appendEvent`, `listSessionsByAgent`) for storage integration
 - idempotency handling at event insertion (`appendEvent(...)`)
 
+## Reference implementation links in this repository
+
+Milestone 3 now has an executable reference implementation in:
+
+- `src/experiments/flutter-m3/gateway-router-reference.ts`
+- `src/experiments/flutter-m3/channel-session-service-reference.ts`
+- `src/experiments/flutter-m3/gateway-router-reference.test.ts`
+- `src/experiments/flutter-m3/channel-session-service-reference.test.ts`
+
+Integration points to prior milestones:
+
+- **Milestone 1 integration**: `Milestone3GatewayRouter.normalizeWithMilestone1(...)` bridges incoming envelopes into the Milestone 1 normalized event model.
+- **Milestone 2 integration**: `Milestone3ChannelSessionService` uses `Milestone2Repository` + `createSession(...)` + `createEvent(...)` to persist sessions/events and enforce idempotency constraints.
+- **Shared session identity**: route resolution uses `buildSessionKey(...)` from the Milestone 2 reference as the canonical key builder.
+
 ## 1) Target architecture for Milestone 3
 
 ```text
@@ -185,14 +200,7 @@ For a selected session:
 - event type badges (`message`, `heartbeat`, `cron`, `internalHook`, `webhook`)
 - status chip (`queued`, `processing`, `completed`, `failed`)
 
-## 7) Milestone 3 reference implementation targets in this repository
-
-Add new experimental files alongside Milestone 1/2 references:
-
-- `src/experiments/flutter-m3/gateway-router-reference.ts`
-- `src/experiments/flutter-m3/channel-session-service-reference.ts`
-- `src/experiments/flutter-m3/gateway-router-reference.test.ts`
-- `src/experiments/flutter-m3/channel-session-service-reference.test.ts`
+## 7) Milestone 3 reference implementation verification checklist
 
 Expected test coverage:
 
