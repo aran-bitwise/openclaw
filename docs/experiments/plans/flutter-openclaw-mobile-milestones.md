@@ -70,6 +70,7 @@ usage:
 
 #### Deliverables
 
+- Milestone 2 implementation document: [Flutter OpenClaw Mobile — Milestone 2 Foundation and Domain Model](/experiments/plans/flutter-openclaw-m2-foundation-domain-model)
 - New Flutter app baseline with layers:
   - `presentation/`
   - `application/`
