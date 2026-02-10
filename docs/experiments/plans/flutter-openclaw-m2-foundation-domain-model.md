@@ -17,6 +17,22 @@ This milestone defines the **first implementation slice** for the Flutter app fo
 - local persistence with schema versioning + migration hooks
 - minimum CRUD flows for agents and sessions
 
+## Reference implementation links in this repository
+
+Milestone 2 now has an executable reference implementation in:
+
+- `src/experiments/flutter-m2/milestone2-reference.ts`
+- `src/experiments/flutter-m2/milestone2-reference.test.ts`
+
+Deliverable-to-code mapping:
+
+- **Core domain entities**: `AgentProfile`, `Session`, `Event`, `MemoryEntry`, `ToolInvocation`, `RunResult`, `EventType` are modeled in `milestone2-reference.ts`.
+- **Session identity and routing alignment**: `buildSessionKey(...)` mirrors milestone guidance for `agent/channel/session` identity composition.
+- **Schema versioning + migration entrypoint**: `Milestone2SchemaVersion`, `migrateStore(...)`, `serializeStore(...)`, `deserializeStore(...)`.
+- **CRUD baseline**: `Milestone2Repository` methods (`createAgent`, `updateAgent`, `createSession`, `listSessionsByAgent`, `appendEvent`).
+- **Idempotency behavior for queued events**: enforced in `appendEvent(...)` using `idempotencyKey`.
+- **Verification tests**: `milestone2-reference.test.ts` covers CRUD flows, v1->v2 migration, idempotency dedupe, and export/import round-trips.
+
 ## 1) Milestone 2 deliverables mapped to concrete outputs
 
 ### A. Flutter project baseline
