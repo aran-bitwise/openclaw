@@ -43,6 +43,8 @@ Integrated references:
 - Milestone 2 persistence/domain: `src/experiments/flutter-m2/*`
 - Milestone 1 normalization model: `src/experiments/flutter-m1/*`
 
+For queue processing guarantees after mobile ingest, use [Milestone 4 Durable Queue and Processing Loop](/experiments/plans/flutter-openclaw-m4-durable-queue-loop).
+
 ## Core contracts
 
 ### Relay ingress contract

@@ -123,6 +123,7 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 
 #### Deliverables
 
+- Milestone 4 implementation document: [Flutter OpenClaw Mobile — Milestone 4 Durable Queue and Processing Loop](/experiments/plans/flutter-openclaw-m4-durable-queue-loop)
 - Durable queue service:
   - Event states: queued, processing, completed, failed
   - Retry policy plus dead-letter strategy

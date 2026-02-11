@@ -229,6 +229,8 @@ Expected test coverage:
 
 ## 9) Milestone 4 handoff
 
+Milestone 4 implementation document: [Flutter OpenClaw Mobile — Milestone 4 Durable Queue and Processing Loop](/experiments/plans/flutter-openclaw-m4-durable-queue-loop)
+
 Milestone 4 should reuse Milestone 3 queue/session gating to implement a durable processing loop with:
 
 - retry policy and dead-letter handling
