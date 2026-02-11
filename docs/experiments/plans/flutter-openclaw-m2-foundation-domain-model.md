@@ -32,6 +32,7 @@ Deliverable-to-code mapping:
 - **CRUD baseline**: `Milestone2Repository` methods (`createAgent`, `updateAgent`, `createSession`, `listSessionsByAgent`, `appendEvent`).
 - **Idempotency behavior for queued events**: enforced in `appendEvent(...)` using `idempotencyKey`.
 - **Verification tests**: `milestone2-reference.test.ts` covers CRUD flows, v1->v2 migration, idempotency dedupe, and export/import round-trips.
+- **Relay readiness for mobile ingress**: align persisted event/idempotency contracts with [Relay API Architecture](/experiments/plans/flutter-openclaw-relay-architecture) so Milestone 3 can fetch/ingest relay batches safely.
 
 ## 1) Milestone 2 deliverables mapped to concrete outputs
 

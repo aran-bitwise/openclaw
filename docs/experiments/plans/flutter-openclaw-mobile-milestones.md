@@ -35,6 +35,8 @@ usage:
 - State persists across sessions and app restarts
 - Security controls are visible, default-on, and testable
 
+Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/experiments/plans/flutter-openclaw-relay-architecture)
+
 ## 1) Milestone Plan (bit-by-bit delivery)
 
 ### Milestone 1 — Discovery, repo intake, and architecture mapping (Week 1)
@@ -102,6 +104,7 @@ usage:
 
 - Milestone 3 implementation document: [Flutter OpenClaw Mobile — Milestone 3 Gateway Router and Channel Sessions](/experiments/plans/flutter-openclaw-m3-gateway-router-sessions)
 - Implement `GatewayRouter` abstraction:
+  - Ingest relay-delivered envelopes fetched from Relay API
   - Accept inbound events from channels
   - Route to `(agentId, channelId, sessionId)`
 - Session behavior:
@@ -199,7 +202,7 @@ usage:
 
 #### Deliverables
 
-- Minimal relay backend for external webhooks (GitHub, Slack, email providers)
+- Production relay backend for external webhooks (GitHub, Slack, email providers), backed by the Relay API architecture
 - Authenticated webhook ingestion and signature verification
 - Relay forwards normalized events via push plus fetch or secure polling
 

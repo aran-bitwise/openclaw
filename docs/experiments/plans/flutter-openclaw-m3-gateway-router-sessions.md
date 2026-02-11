@@ -15,6 +15,7 @@ reference code.
 
 Primary goals:
 
+- integrate Relay API fetch/ack flow for internet-origin events on mobile
 - introduce a `GatewayRouter` abstraction for inbound event normalization and route resolution
 - map inbound channel events to `(agentId, channelId, sessionId/sessionKey)`
 - enforce per-session FIFO behavior without interleaving turns
@@ -55,12 +56,17 @@ Milestone 3 now has an executable reference implementation in:
 - `src/experiments/flutter-m3/channel-session-service-reference.ts`
 - `src/experiments/flutter-m3/gateway-router-reference.test.ts`
 - `src/experiments/flutter-m3/channel-session-service-reference.test.ts`
+- `src/experiments/flutter-relay/api-relay-reference.ts`
+- `src/experiments/flutter-relay/api-relay-reference.test.ts`
 
 Integration points to prior milestones:
 
 - **Milestone 1 integration**: `Milestone3GatewayRouter.normalizeWithMilestone1(...)` bridges incoming envelopes into the Milestone 1 normalized event model.
 - **Milestone 2 integration**: `Milestone3ChannelSessionService` uses `Milestone2Repository` + `createSession(...)` + `createEvent(...)` to persist sessions/events and enforce idempotency constraints.
 - **Shared session identity**: route resolution uses `buildSessionKey(...)` from the Milestone 2 reference as the canonical key builder.
+- **Relay integration**: internet events are ingested through the Relay API reference and delivered to mobile via fetch/ack cycles before entering `ingestInboundEvent(...)`.
+
+Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/experiments/plans/flutter-openclaw-relay-architecture)
 
 ## 1) Target architecture for Milestone 3
 
@@ -210,6 +216,7 @@ Expected test coverage:
 - per-session FIFO ordering guarantees
 - no interleaving within same session under concurrent ingest
 - idempotency rejection for duplicate inbound events
+- relay fetch/ack flow delivers only targeted device events and marks delivery status
 
 ## 8) Exit criteria (Milestone 3)
 

@@ -12,6 +12,8 @@ title: "Flutter OpenClaw Mobile — Milestone 1 Architecture Mapping"
 
 This milestone uses the **current OpenClaw repository as the implementation baseline** (running as a Linux process via the Gateway), and skips the clone step because upstream source is already present in this repo.
 
+For mobile production adaptation, pair this with [Flutter OpenClaw Mobile — Relay API Architecture](/experiments/plans/flutter-openclaw-relay-architecture).
+
 ## 1) OpenClaw runtime map (Linux process baseline)
 
 ### Runtime entry and host process
@@ -97,13 +99,15 @@ OpenClaw currently uses queueing patterns that are **session/lane aware** rather
 ```mermaid
 sequenceDiagram
   participant Input as Channel/Webhook/Cron/Heartbeat/Hook
+  participant Relay as Relay API
   participant Gateway as Gateway (Linux process)
   participant Router as Route + Session Resolver
   participant Dispatch as Dispatch/Queue Layer
   participant Agent as Agent Runner + Tools
   participant Store as Session + Memory Persistence
 
-  Input->>Gateway: inbound event/message
+  Input->>Relay: internet event/webhook
+  Relay->>Gateway: relay fetch/forwarded envelope
   Gateway->>Router: resolve agentId/accountId/sessionKey
   Router-->>Gateway: routing decision
   Gateway->>Dispatch: dispatchInboundMessage(...)
