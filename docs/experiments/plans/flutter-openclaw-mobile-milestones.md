@@ -41,6 +41,18 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 
 ### Work package 1 — Discovery, repo intake, and architecture mapping
 
+#### Assumed app state
+
+- No production Flutter runtime behavior is required yet; this package is planning and architecture
+  baselining.
+- The repository contains architecture mapping and constraints docs that implementation packages can
+  execute against.
+
+#### High-level testable checks
+
+- Can review and trace all five input types from ingress to persistence in docs.
+- Can identify, in writing, mobile platform constraints and proposed mitigations.
+
 #### Deliverables
 
 - Clone and inspect `openclaw/openclaw` _(already completed in this repository)_
@@ -69,6 +81,18 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 - Team can answer: where each input type enters the system, and how it is serialized and processed
 
 ### Work package 2 — Flutter foundation and domain model
+
+#### Assumed app state
+
+- App can launch on iOS and Android simulator/device.
+- User can create, view, edit, and delete local agents and sessions.
+- Domain entities serialize and deserialize with schema version metadata.
+
+#### High-level testable checks
+
+- Can open app and create an agent profile.
+- Can create a session, restart app, and still see agent/session data.
+- Can run schema serialization round-trip tests without data loss.
 
 #### Deliverables
 
@@ -100,6 +124,18 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 
 ### Work package 3 — Gateway abstraction and channel sessions
 
+#### Assumed app state
+
+- Inbound envelopes route through a gateway abstraction.
+- Session boundaries are enforced per channel.
+- Timeline/inbox read models reflect routed events.
+
+#### High-level testable checks
+
+- Can ingest events from two channels and see isolated session histories.
+- Can send rapid events to one session and verify FIFO/no-interleaving behavior.
+- Can confirm duplicate idempotency keys are rejected.
+
 #### Deliverables
 
 - Milestone 3 implementation document: [Flutter OpenClaw Mobile — Milestone 3 Gateway Router and Channel Sessions](/experiments/plans/flutter-openclaw-m3-gateway-router-sessions)
@@ -121,6 +157,18 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 
 ### Work package 4 — Event queue and processing loop
 
+#### Assumed app state
+
+- Durable queue exists with lifecycle states (`queued`, `processing`, `completed`, `failed`).
+- Retry and dead-letter handling are implemented.
+- Processing resumes correctly after app restart.
+
+#### High-level testable checks
+
+- Can enqueue an event and observe lifecycle transitions in diagnostics.
+- Can force a failure and observe retry/backoff then dead-letter behavior.
+- Can kill app mid-processing and recover queue state on relaunch.
+
 #### Deliverables
 
 - Milestone 4 implementation document: [Flutter OpenClaw Mobile — Milestone 4 Durable Queue and Processing Loop](/experiments/plans/flutter-openclaw-m4-durable-queue-loop)
@@ -140,6 +188,18 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 
 ### Work package 5 — Input type #1: Human messages
 
+#### Assumed app state
+
+- User-facing chat composer and session timeline are functional.
+- Human message events flow through shared gateway + queue path.
+- Status chips show queue/processing state.
+
+#### High-level testable checks
+
+- Can open app, send a message, and receive an ordered response in timeline.
+- Can send multiple messages quickly and preserve order in same session.
+- Can retry a failed message and observe updated status.
+
 #### Deliverables
 
 - Milestone 5 implementation document: [Flutter OpenClaw Mobile — Milestone 5 Human Messages UX](/experiments/plans/flutter-openclaw-m5-human-message-ux)
@@ -152,6 +212,18 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 - Rapid user messages are processed in order within a session
 
 ### Work package 6 — Input type #2: Heartbeats
+
+#### Assumed app state
+
+- Heartbeat schedules can be configured per agent.
+- Heartbeat events are generated and processed through same queue path as messages.
+- Suppression token behavior can mute noisy repeated heartbeats.
+
+#### High-level testable checks
+
+- Can open app and enable heartbeat for an agent.
+- Can observe heartbeat event appear in timeline with source metadata.
+- Can validate suppression behavior when token is returned.
 
 #### Deliverables
 
@@ -171,6 +243,18 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 
 ### Work package 7 — Input type #3: Cron jobs
 
+#### Assumed app state
+
+- User can configure multiple cron-style schedules.
+- Missed-run policy and timezone handling are active.
+- Cron events appear in timeline via shared event pipeline.
+
+#### High-level testable checks
+
+- Can open app and set up at least one cron schedule.
+- Can observe scheduled run generate a cron event and complete processing.
+- Can simulate missed run and verify chosen policy outcome (`skip` or catch-up).
+
 #### Deliverables
 
 - Milestone 7 implementation document: [Flutter OpenClaw Mobile - Milestone 7 Cron Jobs](/experiments/plans/flutter-openclaw-m7-cron-jobs)
@@ -187,6 +271,18 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 - At least three schedules can be configured and reliably create events
 
 ### Work package 8 — Input type #4: Internal hooks
+
+#### Assumed app state
+
+- Lifecycle hooks (startup, turn start/end, reset, memory flush) emit internal events.
+- Hook chains are traceable with ancestry metadata.
+- Hook events follow deterministic queue ordering.
+
+#### High-level testable checks
+
+- Can relaunch app and observe startup hook event before first manual action.
+- Can inspect diagnostics to trace hook-generated child events.
+- Can force hook failure and verify retry/failure visibility.
 
 #### Deliverables
 
@@ -205,6 +301,18 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 
 ### Work package 9 — Input type #5: Webhooks
 
+#### Assumed app state
+
+- External providers can deliver signed webhooks to relay.
+- Mobile app can fetch pending relay events and ack delivery.
+- Webhook events merge into existing session timeline model.
+
+#### High-level testable checks
+
+- Can send test webhook and see event in app timeline.
+- Can verify invalid signature is rejected.
+- Can verify duplicate idempotency webhook does not create duplicate run.
+
 #### Deliverables
 
 - Milestone 9 implementation document: [Flutter OpenClaw Mobile - Milestone 9 Webhooks](/experiments/plans/flutter-openclaw-m9-webhooks)
@@ -217,6 +325,18 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 - External webhook triggers an agent run and appears in the timeline with source metadata
 
 ### Work package 10 — Agent-to-agent messaging
+
+#### Assumed app state
+
+- Agent handoff between allowlisted agents is supported.
+- Multi-agent chains are asynchronous and queue-driven on mobile.
+- Handoff traces are visible in inspector/timeline.
+
+#### High-level testable checks
+
+- Can run a task where Agent A delegates to Agent B and returns a result.
+- Can verify non-allowlisted route is blocked.
+- Can verify no infinite loop under cyclic handoff attempts.
 
 #### Deliverables
 
@@ -232,6 +352,18 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 - Demonstrated research-agent to writer-agent pipeline end-to-end
 
 ### Work package 11 — Persistent local memory and context
+
+#### Assumed app state
+
+- Memory scopes (global, per-agent, per-session) are persisted.
+- Memory compaction/summarization is available.
+- Runs can reference prior context after restart.
+
+#### High-level testable checks
+
+- Can create memory entries, restart app, and read them back.
+- Can inspect memory provenance for an agent response.
+- Can run compaction and verify essential context remains.
 
 #### Deliverables
 
@@ -250,6 +382,18 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 
 ### Work package 12 — Tooling layer and capability sandbox
 
+#### Assumed app state
+
+- Tool registry enforces permission policy before invocation.
+- High-risk actions require explicit confirmation.
+- Tool invocations are logged with redaction and decision metadata.
+
+#### High-level testable checks
+
+- Can attempt tool call without permission and see blocked result.
+- Can grant permission and complete tool invocation.
+- Can inspect audit record showing allow or deny reason.
+
 #### Deliverables
 
 - Milestone 12 implementation document: [Flutter OpenClaw Mobile - Milestone 12 Tooling and Capability Sandbox](/experiments/plans/flutter-openclaw-m12-tooling-sandbox)
@@ -265,6 +409,18 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 - Every tool call is logged, attributed, and policy-checked pre-execution
 
 ### Work package 13 — Security hardening
+
+#### Assumed app state
+
+- Security controls are default-deny for risky integrations/actions.
+- Prompt-injection and credential leakage defenses are active.
+- High-risk operations require explicit user confirmation.
+
+#### High-level testable checks
+
+- Can run security checklist scenarios and pass required controls.
+- Can verify red-team prompts do not bypass policy gates.
+- Can confirm sensitive data is redacted in logs and exports.
 
 #### Deliverables
 
@@ -287,6 +443,18 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 
 ### Work package 14 — UX, observability, and explainability
 
+#### Assumed app state
+
+- Inspector exposes source, queue status, trace, memory I/O, and tool invocations.
+- "Why did this happen" ancestry is available for each action.
+- Diagnostics bundles can be exported for triage.
+
+#### High-level testable checks
+
+- Can select a timeline item and trace ancestry to triggering input.
+- Can view policy decision history for a blocked or allowed action.
+- Can export diagnostics and validate expected artifacts are included.
+
 #### Deliverables
 
 - Event inspector UI showing:
@@ -303,6 +471,18 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 - Any action can be traced to the triggering event and policy decisions
 
 ### Work package 15 — Beta, validation, and launch readiness
+
+#### Assumed app state
+
+- Closed beta build is deployable to TestFlight and Play Internal Testing.
+- Reliability and operational runbooks are documented.
+- Rollback and incident workflows are rehearsed.
+
+#### High-level testable checks
+
+- Can install beta build and execute core message/schedule/webhook flows.
+- Can run durability/offline/duplicate-event test suite successfully.
+- Can execute rollback checklist and verify controlled recovery.
 
 #### Deliverables
 
