@@ -155,6 +155,7 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 
 #### Deliverables
 
+- Milestone 6 implementation document: [Flutter OpenClaw Mobile - Milestone 6 Heartbeats](/experiments/plans/flutter-openclaw-m6-heartbeats)
 - Configurable heartbeat per agent:
   - Interval
   - Active hours

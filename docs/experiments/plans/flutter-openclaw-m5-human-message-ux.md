@@ -148,6 +148,6 @@ Edge cases:
 
 ## 8) Milestone 6 handoff
 
-Milestone 6 (heartbeats) should reuse Milestone 5 message runtime path by injecting heartbeat
-system messages into the same queue/timeline contract rather than creating a separate processing
-pipeline.
+Milestone 6 is documented in [Flutter OpenClaw Mobile - Milestone 6 Heartbeats](/experiments/plans/flutter-openclaw-m6-heartbeats).
+It should reuse the Milestone 5 message runtime path by injecting heartbeat system messages into
+the same queue and timeline contract rather than creating a separate processing pipeline.
