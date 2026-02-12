@@ -170,6 +170,8 @@ Add queue visibility surfaces:
 
 ## 9) Milestone 5 handoff
 
+Milestone 5 implementation document: [Flutter OpenClaw Mobile — Milestone 5 Human Messages UX](/experiments/plans/flutter-openclaw-m5-human-message-ux)
+
 Milestone 5 (human message UX) should consume Milestone 4 runtime primitives:
 
 - composer events enqueue through durable queue path

@@ -142,6 +142,7 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 
 #### Deliverables
 
+- Milestone 5 implementation document: [Flutter OpenClaw Mobile — Milestone 5 Human Messages UX](/experiments/plans/flutter-openclaw-m5-human-message-ux)
 - In-app chat UX for user-to-agent messaging
 - Message events normalized through gateway and queue
 - Typing/processing state and ordered response rendering
