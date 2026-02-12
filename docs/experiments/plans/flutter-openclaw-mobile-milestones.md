@@ -331,6 +331,10 @@ Suggested prompt template:
 > Implement Milestone X for the Flutter OpenClaw app. Keep changes under N files. Include unit
 > tests and an architecture note.
 
+## Interaction flow reference
+
+- User interaction diagrams: [Flutter OpenClaw Mobile User Interaction Flows](/experiments/plans/flutter-openclaw-user-interactions)
+
 ## 3) Repository intake steps for OpenClaw (required early work)
 
 - Create a separate workspace folder for upstream reference:
