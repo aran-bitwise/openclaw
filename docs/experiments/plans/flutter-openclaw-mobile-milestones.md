@@ -173,6 +173,7 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 
 #### Deliverables
 
+- Milestone 7 implementation document: [Flutter OpenClaw Mobile - Milestone 7 Cron Jobs](/experiments/plans/flutter-openclaw-m7-cron-jobs)
 - Cron-like scheduler UI:
   - Daily
   - Weekly
@@ -189,6 +190,7 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 
 #### Deliverables
 
+- Milestone 8 implementation document: [Flutter OpenClaw Mobile - Milestone 8 Internal Hooks](/experiments/plans/flutter-openclaw-m8-internal-hooks)
 - Hook system for lifecycle events:
   - App startup
   - Agent turn start/end
@@ -205,6 +207,7 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 
 #### Deliverables
 
+- Milestone 9 implementation document: [Flutter OpenClaw Mobile - Milestone 9 Webhooks](/experiments/plans/flutter-openclaw-m9-webhooks)
 - Production relay backend for external webhooks (GitHub, Slack, email providers), backed by the Relay API architecture
 - Authenticated webhook ingestion and signature verification
 - Relay forwards normalized events via push plus fetch or secure polling
@@ -217,6 +220,7 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 
 #### Deliverables
 
+- Milestone 10 implementation document: [Flutter OpenClaw Mobile - Milestone 10 Agent-to-Agent Messaging](/experiments/plans/flutter-openclaw-m10-agent-to-agent)
 - Multi-agent orchestration:
   - Agent A sends task message to Agent B
   - Isolated memory/workspace by agent
@@ -231,6 +235,7 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 
 #### Deliverables
 
+- Milestone 11 implementation document: [Flutter OpenClaw Mobile - Milestone 11 Memory and Context](/experiments/plans/flutter-openclaw-m11-memory-context)
 - Markdown-like memory representation persisted locally (or equivalent structured storage with
   markdown export)
 - Memory scopes:
@@ -247,6 +252,7 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 
 #### Deliverables
 
+- Milestone 12 implementation document: [Flutter OpenClaw Mobile - Milestone 12 Tooling and Capability Sandbox](/experiments/plans/flutter-openclaw-m12-tooling-sandbox)
 - `ToolRegistry` abstraction with permissions for:
   - Browser/search APIs
   - Calendar/email integrations
