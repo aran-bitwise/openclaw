@@ -177,3 +177,15 @@ Milestone 5 (human message UX) should consume Milestone 4 runtime primitives:
 - composer events enqueue through durable queue path
 - timeline renders queue + processing states in order
 - typing/processing indicators reflect durable worker state
+
+## Mermaid reference diagram
+
+```mermaid
+stateDiagram-v2
+    [*] --> queued
+    queued --> processing
+    processing --> completed
+    processing --> failed
+    failed --> queued: retry policy
+    failed --> dead_letter: retry budget exhausted
+```

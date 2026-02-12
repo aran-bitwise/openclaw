@@ -272,3 +272,14 @@ Milestone 2 dependency handoff to Milestone 3:
 - `Milestone2Repository.createSession(...)` provides create-if-missing session behavior for routed events.
 - `Milestone2Repository.appendEvent(...)` provides idempotency-key dedupe at ingestion boundaries.
 - schema migration path (`migrateStore`) remains unchanged; Milestone 3 should avoid schema-breaking changes unless required.
+
+## Mermaid reference diagram
+
+```mermaid
+flowchart TD
+    UI[Presentation] --> APP[Application use-cases]
+    APP --> DOM[Domain entities]
+    DOM --> INF[Infrastructure repositories]
+    INF --> DB[(Local persistence)]
+    INF --> SEC[(Secure storage)]
+```

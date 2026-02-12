@@ -389,3 +389,26 @@ Mitigation: default-deny permissions, scoped grants, and integration reviews.
 ### Autonomy expectation mismatch
 
 Mitigation: explicit trace/explainability UI showing event-driven causality.
+
+## Mermaid reference diagram
+
+```mermaid
+gantt
+    title Flutter OpenClaw mobile milestone progression
+    dateFormat  YYYY-MM-DD
+    section Runtime core
+    M1 discovery            :done, 2026-02-01, 5d
+    M2 foundation model     :done, 2026-02-06, 5d
+    M3 gateway and sessions :done, 2026-02-11, 5d
+    M4 durable queue        :active, 2026-02-16, 6d
+    section Inputs and UX
+    M5 messages             :2026-02-22, 5d
+    M6 heartbeats           :2026-02-27, 5d
+    M7 cron                 :2026-03-04, 5d
+    M8 hooks                :2026-03-09, 5d
+    M9 webhooks             :2026-03-14, 5d
+    section Advanced capabilities
+    M10 multi-agent         :2026-03-19, 6d
+    M11 memory              :2026-03-25, 5d
+    M12 tooling sandbox     :2026-03-30, 6d
+```

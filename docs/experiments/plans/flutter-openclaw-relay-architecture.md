@@ -68,3 +68,16 @@ For queue processing guarantees after mobile ingest, use [Milestone 4 Durable Qu
 - Relay should support per-tenant encryption and signed webhook verification.
 - Mobile should use short background fetch windows and process bounded batches.
 - Observability should include relay event IDs correlated with mobile timeline events.
+
+## Mermaid reference diagram
+
+```mermaid
+flowchart LR
+    EXT[Internet provider] --> IN[Relay ingest endpoint]
+    IN --> PEND[Pending queue per device]
+    APP[Mobile app] --> FETCH[Fetch pending]
+    FETCH --> PEND
+    APP --> ING[Milestone 3 ingest]
+    APP --> ACK[Acknowledge delivered]
+    ACK --> PEND
+```

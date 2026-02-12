@@ -72,3 +72,19 @@ model and binding it to the existing routing and queue contracts.
 ## 7) Milestone 10 handoff
 
 Milestone 10 should reuse relay-grade routing controls for secure agent-to-agent handoff envelopes.
+
+## Mermaid reference diagram
+
+```mermaid
+sequenceDiagram
+    participant P as Provider
+    participant R as Relay API
+    participant M as Mobile app
+    participant S as Session service
+
+    P->>R: signed webhook
+    R->>R: validate and dedupe
+    M->>R: fetch pending by device
+    M->>S: ingest normalized webhook
+    M->>R: ack delivered
+```

@@ -70,3 +70,14 @@ Each entry must carry source metadata and recency markers for ranking and explai
 
 Milestone 12 should apply explicit tool permission policies to memory-consuming and memory-writing
 operations.
+
+## Mermaid reference diagram
+
+```mermaid
+flowchart TD
+    RUN[Run result] --> WR[Write scoped memory]
+    WR --> IDX[Update memory index]
+    IDX --> CMP[Compaction and summarization]
+    CMP --> RD[Next run memory read]
+    RD --> EXP[Explain read sources]
+```

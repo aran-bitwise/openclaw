@@ -236,3 +236,19 @@ Milestone 4 should reuse Milestone 3 queue/session gating to implement a durable
 - retry policy and dead-letter handling
 - robust status transitions
 - app restart recovery from persisted queued/processing states
+
+## Mermaid reference diagram
+
+```mermaid
+sequenceDiagram
+    participant IN as Inbound envelope
+    participant GR as GatewayRouter
+    participant SS as Session service
+    participant REPO as Milestone2Repository
+
+    IN->>GR: resolve route(agent, channel, session)
+    GR->>SS: ingestInboundEvent
+    SS->>REPO: create session if missing
+    SS->>REPO: append normalized event
+    SS-->>IN: accepted or duplicate
+```

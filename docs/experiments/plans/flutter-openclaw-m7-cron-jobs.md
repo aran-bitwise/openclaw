@@ -90,3 +90,14 @@ Each schedule should define:
 
 Milestone 8 should treat internal hooks as another event producer that reuses the same scheduling
 metadata and queue ingestion discipline defined here.
+
+## Mermaid reference diagram
+
+```mermaid
+flowchart TD
+    CRON[Cron rule] --> WIN[Resolve run windows]
+    WIN --> KEY[Build idempotency key]
+    KEY --> ENQ[Enqueue cron event]
+    ENQ --> LOOP[Process via durable loop]
+    LOOP --> OUT[Timeline with schedule metadata]
+```

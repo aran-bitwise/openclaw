@@ -72,3 +72,19 @@ Each tool should define:
 
 Milestone 13 security hardening should formalize threat-model-driven tests over these policy and
 sandbox controls.
+
+## Mermaid reference diagram
+
+```mermaid
+sequenceDiagram
+    participant REQ as Tool request
+    participant POL as Policy check
+    participant CONS as Consent gate
+    participant TOOL as Tool execution
+    participant AUD as Audit log
+
+    REQ->>POL: evaluate permissions
+    POL->>CONS: require confirmation for high risk
+    CONS->>TOOL: approved invocation
+    TOOL->>AUD: write redacted record
+```

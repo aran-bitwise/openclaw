@@ -152,3 +152,14 @@ Required UI behavior:
 ## 8) Milestone 7 handoff
 
 Milestone 7 is documented in [Flutter OpenClaw Mobile - Milestone 7 Cron Jobs](/experiments/plans/flutter-openclaw-m7-cron-jobs). It should build on Milestone 6 scheduler primitives by adding richer schedule expressions and missed-run policies while continuing to reuse Milestone 3 routing, Milestone 4 queueing, and Milestone 5 timeline presentation patterns.
+
+## Mermaid reference diagram
+
+```mermaid
+flowchart LR
+    CFG[Heartbeat config] --> SCH[Platform scheduler]
+    SCH --> EVT[Heartbeat event envelope]
+    EVT --> ING[Milestone 3 ingest]
+    ING --> Q[Milestone 4 queue]
+    Q --> TL[Timeline and diagnostics]
+```

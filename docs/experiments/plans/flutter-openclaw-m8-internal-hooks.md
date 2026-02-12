@@ -75,3 +75,18 @@ Each hook emits a normalized internal event record with idempotency key and trac
 
 Milestone 9 should route external webhooks through relay to produce the same normalized internal
 contracts already used by hooks and schedules.
+
+## Mermaid reference diagram
+
+```mermaid
+sequenceDiagram
+    participant APP as Runtime lifecycle
+    participant HK as Hook engine
+    participant Q as Durable queue
+    participant INS as Inspector
+
+    APP->>HK: startup or turn lifecycle signal
+    HK->>Q: enqueue internal hook event
+    Q->>Q: process and emit follow-up events
+    Q-->>INS: ancestry and status updates
+```

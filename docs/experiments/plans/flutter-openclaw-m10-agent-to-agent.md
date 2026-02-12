@@ -83,3 +83,14 @@ Each handoff event should include:
 ## 7) Milestone 11 handoff
 
 Milestone 11 should persist handoff traces and outputs into durable scoped memory for future runs.
+
+## Mermaid reference diagram
+
+```mermaid
+flowchart LR
+    A[Agent A task] --> G{Allowlisted route?}
+    G -->|yes| B[Agent B queued handoff]
+    G -->|no| X[Blocked and audited]
+    B --> R[Result event]
+    R --> U[User timeline with trace]
+```

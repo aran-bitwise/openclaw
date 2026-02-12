@@ -151,3 +151,19 @@ Edge cases:
 Milestone 6 is documented in [Flutter OpenClaw Mobile - Milestone 6 Heartbeats](/experiments/plans/flutter-openclaw-m6-heartbeats).
 It should reuse the Milestone 5 message runtime path by injecting heartbeat system messages into
 the same queue and timeline contract rather than creating a separate processing pipeline.
+
+## Mermaid reference diagram
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant C as Composer
+    participant R as Runtime
+    participant T as Timeline
+
+    U->>C: send message
+    C->>R: ingest as message event
+    R->>R: queue and process
+    R-->>T: status updates and response
+    T-->>U: ordered conversation view
+```
