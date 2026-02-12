@@ -337,6 +337,10 @@ Suggested prompt template:
 > Implement Milestone X for the Flutter OpenClaw app. Keep changes under N files. Include unit
 > tests and an architecture note.
 
+## Implementation readiness
+
+- Implementation readiness review and execution plan: [Flutter OpenClaw Mobile Implementation Readiness and Execution Steps](/experiments/plans/flutter-openclaw-implementation-readiness)
+
 ## Interaction flow reference
 
 - User interaction diagrams: [Flutter OpenClaw Mobile User Interaction Flows](/experiments/plans/flutter-openclaw-user-interactions)
