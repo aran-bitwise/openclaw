@@ -85,7 +85,12 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 #### Assumed app state
 
 - App can launch on iOS and Android simulator/device.
-- User can create, view, edit, and delete local agents and sessions.
+- User can create, view, edit, and delete agents and sessions stored locally on the mobile device
+  (for example in app-managed SQLite or object storage).
+- Agents and sessions are local runtime records (configuration, conversation context, queue metadata),
+  not remote long-lived processes.
+- Model execution can still call remote LLM/provider APIs using configured API keys, but scheduling,
+  routing, queue state, and session memory remain device-local in this work package.
 - Domain entities serialize and deserialize with schema version metadata.
 
 #### High-level testable checks
