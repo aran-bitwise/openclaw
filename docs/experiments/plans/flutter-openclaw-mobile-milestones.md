@@ -37,9 +37,9 @@ usage:
 
 Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/experiments/plans/flutter-openclaw-relay-architecture)
 
-## 1) Milestone Plan (bit-by-bit delivery)
+## 1) Agent-executable work packages
 
-### Milestone 1 — Discovery, repo intake, and architecture mapping (Week 1)
+### Work package 1 — Discovery, repo intake, and architecture mapping
 
 #### Deliverables
 
@@ -68,7 +68,7 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 
 - Team can answer: where each input type enters the system, and how it is serialized and processed
 
-### Milestone 2 — Flutter foundation and domain model (Week 1–2)
+### Work package 2 — Flutter foundation and domain model
 
 #### Deliverables
 
@@ -98,7 +98,7 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 
 - App runs on iOS and Android and can CRUD agents and sessions locally
 
-### Milestone 3 — Gateway abstraction and channel sessions (Week 2)
+### Work package 3 — Gateway abstraction and channel sessions
 
 #### Deliverables
 
@@ -119,7 +119,7 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 
 - Multiple channels can send messages while preserving isolated context and ordering
 
-### Milestone 4 — Event queue and processing loop (Week 2–3)
+### Work package 4 — Event queue and processing loop
 
 #### Deliverables
 
@@ -138,7 +138,7 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 
 - Queue state recovers correctly after app kill/restart during processing
 
-### Milestone 5 — Input type #1: Human messages (Week 3)
+### Work package 5 — Input type #1: Human messages
 
 #### Deliverables
 
@@ -151,7 +151,7 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 
 - Rapid user messages are processed in order within a session
 
-### Milestone 6 — Input type #2: Heartbeats (Week 3–4)
+### Work package 6 — Input type #2: Heartbeats
 
 #### Deliverables
 
@@ -169,7 +169,7 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 
 - Heartbeat events follow the same queue path and behavior as chat messages
 
-### Milestone 7 — Input type #3: Cron jobs (Week 4)
+### Work package 7 — Input type #3: Cron jobs
 
 #### Deliverables
 
@@ -186,7 +186,7 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 
 - At least three schedules can be configured and reliably create events
 
-### Milestone 8 — Input type #4: Internal hooks (Week 4–5)
+### Work package 8 — Input type #4: Internal hooks
 
 #### Deliverables
 
@@ -203,7 +203,7 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 
 - Startup hook can run setup instructions and persist results before first interaction
 
-### Milestone 9 — Input type #5: Webhooks (Week 5)
+### Work package 9 — Input type #5: Webhooks
 
 #### Deliverables
 
@@ -216,7 +216,7 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 
 - External webhook triggers an agent run and appears in the timeline with source metadata
 
-### Milestone 10 — Agent-to-agent messaging (Week 5–6)
+### Work package 10 — Agent-to-agent messaging
 
 #### Deliverables
 
@@ -231,7 +231,7 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 
 - Demonstrated research-agent to writer-agent pipeline end-to-end
 
-### Milestone 11 — Persistent local memory and context (Week 6)
+### Work package 11 — Persistent local memory and context
 
 #### Deliverables
 
@@ -248,7 +248,7 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 
 - Agent references prior-day context after restart with inspectable local memory artifacts
 
-### Milestone 12 — Tooling layer and capability sandbox (Week 6–7)
+### Work package 12 — Tooling layer and capability sandbox
 
 #### Deliverables
 
@@ -264,7 +264,7 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 
 - Every tool call is logged, attributed, and policy-checked pre-execution
 
-### Milestone 13 — Security hardening (Week 7)
+### Work package 13 — Security hardening
 
 #### Deliverables
 
@@ -285,7 +285,7 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 
 - Security review passes checklist and high-risk operations require explicit confirmation
 
-### Milestone 14 — UX, observability, and explainability (Week 7–8)
+### Work package 14 — UX, observability, and explainability
 
 #### Deliverables
 
@@ -302,7 +302,7 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 
 - Any action can be traced to the triggering event and policy decisions
 
-### Milestone 15 — Beta, validation, and launch readiness (Week 8+)
+### Work package 15 — Beta, validation, and launch readiness
 
 #### Deliverables
 
@@ -322,9 +322,9 @@ Reference architecture: [Flutter OpenClaw Mobile — Relay API Architecture](/ex
 
 - Stable beta with documented limitations and rollback plan
 
-## 2) Practical Codex-by-Codex work breakdown
+## 2) Practical AI coding agent execution loop
 
-For each milestone, use this sequence:
+For each work package, use this sequence:
 
 1. Ask Codex for implementation plan (files, classes, tests, risks)
 2. Ask Codex for an incremental patch (small PR-sized change)
@@ -332,10 +332,14 @@ For each milestone, use this sequence:
 4. Ask Codex for threat/risk review of its patch
 5. Commit and update changelog
 
-Suggested prompt template:
+Base prompt template:
 
 > Implement Milestone X for the Flutter OpenClaw app. Keep changes under N files. Include unit
 > tests and an architecture note.
+
+## Prompt catalog for AI coding agents
+
+- Work-package prompts: [Flutter OpenClaw Mobile Agent Prompt Catalog](/experiments/plans/flutter-openclaw-agent-prompts)
 
 ## Implementation readiness
 
@@ -397,22 +401,19 @@ Mitigation: explicit trace/explainability UI showing event-driven causality.
 ## Mermaid reference diagram
 
 ```mermaid
-gantt
-    title Flutter OpenClaw mobile milestone progression
-    dateFormat  YYYY-MM-DD
-    section Runtime core
-    M1 discovery            :done, 2026-02-01, 5d
-    M2 foundation model     :done, 2026-02-06, 5d
-    M3 gateway and sessions :done, 2026-02-11, 5d
-    M4 durable queue        :active, 2026-02-16, 6d
-    section Inputs and UX
-    M5 messages             :2026-02-22, 5d
-    M6 heartbeats           :2026-02-27, 5d
-    M7 cron                 :2026-03-04, 5d
-    M8 hooks                :2026-03-09, 5d
-    M9 webhooks             :2026-03-14, 5d
-    section Advanced capabilities
-    M10 multi-agent         :2026-03-19, 6d
-    M11 memory              :2026-03-25, 5d
-    M12 tooling sandbox     :2026-03-30, 6d
+flowchart TD
+    W1[Work package 1: discovery] --> W2[Work package 2: foundation]
+    W2 --> W3[Work package 3: gateway and sessions]
+    W3 --> W4[Work package 4: durable queue and loop]
+    W4 --> W5[Work package 5: human messages]
+    W5 --> W6[Work package 6: heartbeats]
+    W6 --> W7[Work package 7: cron]
+    W7 --> W8[Work package 8: internal hooks]
+    W8 --> W9[Work package 9: webhooks]
+    W9 --> W10[Work package 10: agent-to-agent]
+    W10 --> W11[Work package 11: memory]
+    W11 --> W12[Work package 12: tooling sandbox]
+    W12 --> W13[Work package 13: security hardening]
+    W13 --> W14[Work package 14: observability and explainability]
+    W14 --> W15[Work package 15: beta and launch readiness]
 ```
