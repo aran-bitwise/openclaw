@@ -1,4 +1,4 @@
-enum EventType { message, heartbeat, cron, hook, webhook }
+enum EventType { humanMessage, heartbeat, cron, hook, webhook }
 
 enum QueueState { queued, processing, completed, failed, deadLetter }
 
@@ -91,15 +91,19 @@ class Event implements VersionedEntity {
   @override
   final int schemaVersion;
 
-  factory Event.fromJson(Map<String, dynamic> json) => Event(
-    id: json['id'] as String,
-    sessionId: json['sessionId'] as String,
-    type: EventType.values.byName(json['type'] as String),
-    payload: Map<String, dynamic>.from(json['payload'] as Map),
-    idempotencyKey: json['idempotencyKey'] as String,
-    createdAt: json['createdAt'] as int,
-    schemaVersion: (json['schemaVersion'] as int?) ?? 1,
-  );
+  factory Event.fromJson(Map<String, dynamic> json) {
+    final rawType = json['type'] as String;
+    final normalized = rawType == 'message' ? 'humanMessage' : rawType;
+    return Event(
+      id: json['id'] as String,
+      sessionId: json['sessionId'] as String,
+      type: EventType.values.byName(normalized),
+      payload: Map<String, dynamic>.from(json['payload'] as Map),
+      idempotencyKey: json['idempotencyKey'] as String,
+      createdAt: json['createdAt'] as int,
+      schemaVersion: (json['schemaVersion'] as int?) ?? 1,
+    );
+  }
 
   @override
   Map<String, dynamic> toJson() => {
@@ -213,4 +217,11 @@ class RunResult implements VersionedEntity {
     'completedAt': completedAt,
     'schemaVersion': schemaVersion,
   };
+}
+
+class TimelineItem {
+  TimelineItem({required this.event, required this.state});
+
+  final Event event;
+  final QueueState state;
 }

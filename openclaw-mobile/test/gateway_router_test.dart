@@ -11,7 +11,7 @@ void main() {
         channelId: 'channel-1',
         agentId: 'agent-1',
         sessionId: 'session-1',
-        eventType: EventType.message,
+        eventType: EventType.humanMessage,
         idempotencyKey: 'k1',
         payload: const {'t': 'x'},
       ),

@@ -26,16 +26,23 @@ final agentsProvider = FutureProvider<List<AgentProfile>>((ref) async {
   return db.listAgents();
 });
 
-final sessionsProvider = FutureProvider<List<Session>>((ref) async {
+final selectedAgentIdProvider = StateProvider<String?>((_) => null);
+final selectedSessionIdProvider = StateProvider<String?>((_) => null);
+
+final sessionsByAgentProvider = FutureProvider<List<Session>>((ref) async {
   final db = ref.watch(databaseProvider);
   await db.init();
-  return db.listSessions();
+  final agentId = ref.watch(selectedAgentIdProvider);
+  if (agentId == null) return [];
+  return db.listSessionsByAgent(agentId);
 });
 
-final sessionEventsProvider = FutureProvider.family<List<Event>, String>((ref, sessionId) async {
+final timelineProvider = FutureProvider<List<TimelineItem>>((ref) async {
   final db = ref.watch(databaseProvider);
   await db.init();
-  return db.listEventsBySession(sessionId);
+  final sessionId = ref.watch(selectedSessionIdProvider);
+  if (sessionId == null) return [];
+  return db.listTimelineBySession(sessionId);
 });
 
 final queueViewProvider = FutureProvider<List<Map<String, Object?>>>((ref) async {

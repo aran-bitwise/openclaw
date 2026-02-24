@@ -111,6 +111,24 @@ class AppDatabase extends GeneratedDatabase {
         .toList();
   }
 
+  Future<List<Session>> listSessionsByAgent(String agentId) async {
+    final rows = await customSelect(
+      'SELECT * FROM sessions WHERE agent_id = ? ORDER BY created_at DESC',
+      variables: [Variable.withString(agentId)],
+    ).get();
+    return rows
+        .map(
+          (row) => Session(
+            id: row.read<String>('id'),
+            agentId: row.read<String>('agent_id'),
+            channelId: row.read<String>('channel_id'),
+            createdAt: row.read<int>('created_at'),
+            schemaVersion: row.read<int>('schema_version'),
+          ),
+        )
+        .toList();
+  }
+
   Future<bool> insertEvent(Event event) async {
     try {
       await customStatement(
@@ -136,19 +154,40 @@ class AppDatabase extends GeneratedDatabase {
       'SELECT * FROM events WHERE session_id = ? ORDER BY created_at ASC',
       variables: [Variable.withString(sessionId)],
     ).get();
+    return rows.map(_eventFromRow).toList();
+  }
+
+  Future<List<TimelineItem>> listTimelineBySession(String sessionId) async {
+    final rows = await customSelect('''
+      SELECT e.*, q.state AS queue_state
+      FROM events e
+      LEFT JOIN queue_items q ON q.event_id = e.id
+      WHERE e.session_id = ?
+      ORDER BY e.created_at ASC
+    ''', variables: [Variable.withString(sessionId)]).get();
+
     return rows
         .map(
-          (row) => Event(
-            id: row.read<String>('id'),
-            sessionId: row.read<String>('session_id'),
-            type: EventType.values.byName(row.read<String>('type')),
-            payload: Map<String, dynamic>.from(jsonDecode(row.read<String>('payload_json')) as Map),
-            idempotencyKey: row.read<String>('idempotency_key'),
-            createdAt: row.read<int>('created_at'),
-            schemaVersion: row.read<int>('schema_version'),
+          (row) => TimelineItem(
+            event: _eventFromRow(row),
+            state: QueueState.values.byName((row.read<String?>('queue_state') ?? 'queued')),
           ),
         )
         .toList();
+  }
+
+  Event _eventFromRow(QueryRow row) {
+    final rawType = row.read<String>('type');
+    final normalized = rawType == 'message' ? 'humanMessage' : rawType;
+    return Event(
+      id: row.read<String>('id'),
+      sessionId: row.read<String>('session_id'),
+      type: EventType.values.byName(normalized),
+      payload: Map<String, dynamic>.from(jsonDecode(row.read<String>('payload_json')) as Map),
+      idempotencyKey: row.read<String>('idempotency_key'),
+      createdAt: row.read<int>('created_at'),
+      schemaVersion: row.read<int>('schema_version'),
+    );
   }
 
   Future<void> enqueue({required String queueId, required String eventId, required String sessionId}) async {
@@ -174,18 +213,7 @@ class AppDatabase extends GeneratedDatabase {
     ''', variables: [Variable.withInt(now)]).get();
 
     if (rows.isEmpty) return null;
-    final row = rows.first;
-    return QueueItem(
-      id: row.read<String>('id'),
-      eventId: row.read<String>('event_id'),
-      sessionId: row.read<String>('session_id'),
-      state: QueueState.values.byName(row.read<String>('state')),
-      attemptCount: row.read<int>('attempt_count'),
-      maxAttempts: row.read<int>('max_attempts'),
-      nextAttemptAt: row.read<int>('next_attempt_at'),
-      createdAt: row.read<int>('created_at'),
-      updatedAt: row.read<int>('updated_at'),
-    );
+    return _queueItemFromRow(rows.first);
   }
 
   Future<void> updateQueueState(String id, QueueState state, {int? nextAttemptAt}) async {
@@ -211,6 +239,25 @@ class AppDatabase extends GeneratedDatabase {
     );
   }
 
+  Future<bool> retryEvent(String eventId) async {
+    final rows = await customSelect(
+      'SELECT * FROM queue_items WHERE event_id = ? LIMIT 1',
+      variables: [Variable.withString(eventId)],
+    ).get();
+    if (rows.isEmpty) return false;
+    final item = _queueItemFromRow(rows.first);
+    await customStatement(
+      'UPDATE queue_items SET state = ?, attempt_count = 0, next_attempt_at = ?, updated_at = ? WHERE id = ?',
+      [
+        QueueState.queued.name,
+        DateTime.now().millisecondsSinceEpoch,
+        DateTime.now().millisecondsSinceEpoch,
+        item.id,
+      ],
+    );
+    return true;
+  }
+
   Future<void> insertRunResult(RunResult result) async {
     await customStatement(
       'INSERT OR REPLACE INTO run_results (id,event_id,output,completed_at,schema_version) VALUES (?,?,?,?,?)',
@@ -218,9 +265,42 @@ class AppDatabase extends GeneratedDatabase {
     );
   }
 
+
+  Future<List<RunResult>> listRunResultsByEvent(String eventId) async {
+    final rows = await customSelect(
+      'SELECT * FROM run_results WHERE event_id = ? ORDER BY completed_at ASC',
+      variables: [Variable.withString(eventId)],
+    ).get();
+    return rows
+        .map(
+          (row) => RunResult(
+            id: row.read<String>('id'),
+            eventId: row.read<String>('event_id'),
+            output: row.read<String>('output'),
+            completedAt: row.read<int>('completed_at'),
+            schemaVersion: row.read<int>('schema_version'),
+          ),
+        )
+        .toList();
+  }
+
   Future<List<Map<String, Object?>>> listQueueItems() async {
     final rows = await customSelect('SELECT * FROM queue_items ORDER BY created_at ASC').get();
     return rows.map((r) => r.data).toList();
+  }
+
+  QueueItem _queueItemFromRow(QueryRow row) {
+    return QueueItem(
+      id: row.read<String>('id'),
+      eventId: row.read<String>('event_id'),
+      sessionId: row.read<String>('session_id'),
+      state: QueueState.values.byName(row.read<String>('state')),
+      attemptCount: row.read<int>('attempt_count'),
+      maxAttempts: row.read<int>('max_attempts'),
+      nextAttemptAt: row.read<int>('next_attempt_at'),
+      createdAt: row.read<int>('created_at'),
+      updatedAt: row.read<int>('updated_at'),
+    );
   }
 }
 

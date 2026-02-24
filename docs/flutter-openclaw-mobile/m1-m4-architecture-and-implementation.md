@@ -145,3 +145,7 @@ Design deviation notes:
 - Unit tests: serialization, schema version, gateway routing, idempotency, queue transitions.
 - Integration tests: ingest -> queue -> process -> persisted result.
 - Failure tests: forced processor failure and dead-letter transition.
+
+## Milestone 5 implementation follow-up
+
+- Human messages implementation details: `/flutter-openclaw-mobile/m5-human-messages-implementation`
