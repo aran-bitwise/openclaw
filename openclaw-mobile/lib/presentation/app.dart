@@ -32,7 +32,7 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
   final _uuid = const Uuid();
   final _composer = TextEditingController();
   Timer? _refreshTimer;
-  Timer? _heartbeatTimer;
+  Timer? _schedulerTimer;
 
   @override
   void initState() {
@@ -44,27 +44,21 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
       await db.upsertAgent(
         AgentProfile(id: 'default-agent', name: 'Default Agent', createdAt: DateTime.now().millisecondsSinceEpoch),
       );
-      ref.invalidate(agentsProvider);
       ref.read(selectedAgentIdProvider.notifier).state = 'default-agent';
-      await _runHeartbeatTick();
+      await _runSchedulersTick();
+      _refreshViews();
     });
 
-    _refreshTimer = Timer.periodic(const Duration(milliseconds: 600), (_) {
-      if (!mounted) return;
-      ref.invalidate(timelineProvider);
-      ref.invalidate(queueViewProvider);
-      ref.invalidate(sessionsByAgentProvider);
-      ref.invalidate(agentsProvider);
-    });
+    _refreshTimer = Timer.periodic(const Duration(milliseconds: 600), (_) => _refreshViews());
 
     // Best-effort scheduler until native Android WorkManager / iOS BGTask hooks land.
-    _heartbeatTimer = Timer.periodic(const Duration(minutes: 1), (_) => _runHeartbeatTick());
+    _schedulerTimer = Timer.periodic(const Duration(minutes: 1), (_) => _runSchedulersTick());
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _runHeartbeatTick();
+      _runSchedulersTick();
     }
   }
 
@@ -72,7 +66,7 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _refreshTimer?.cancel();
-    _heartbeatTimer?.cancel();
+    _schedulerTimer?.cancel();
     _composer.dispose();
     super.dispose();
   }
@@ -87,7 +81,7 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('OpenClaw Chat (Milestone 6)'),
+        title: const Text('OpenClaw Chat (Milestone 7)'),
         actions: [
           IconButton(
             tooltip: 'Process now',
@@ -99,8 +93,13 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
           ),
           IconButton(
             tooltip: 'Run heartbeat now',
-            onPressed: () => _runHeartbeatTick(),
+            onPressed: _runSchedulersTick,
             icon: const Icon(Icons.favorite),
+          ),
+          IconButton(
+            tooltip: 'Run cron check now',
+            onPressed: _runSchedulersTick,
+            icon: const Icon(Icons.schedule),
           ),
         ],
       ),
@@ -134,7 +133,7 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
                     await db.upsertAgent(
                       AgentProfile(id: id, name: 'Agent ${id.substring(0, 6)}', createdAt: DateTime.now().millisecondsSinceEpoch),
                     );
-                    ref.invalidate(agentsProvider);
+                    _refreshViews();
                   },
                   child: const Text('Add agent'),
                 ),
@@ -142,6 +141,8 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
             ),
             const SizedBox(height: 8),
             _HeartbeatConfigCard(agentId: selectedAgent),
+            const SizedBox(height: 8),
+            _CronSchedulesCard(agentId: selectedAgent, selectedSessionId: selectedSession),
             const SizedBox(height: 8),
             Row(
               children: [
@@ -174,8 +175,8 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
                               createdAt: DateTime.now().millisecondsSinceEpoch,
                             ),
                           );
-                          ref.invalidate(sessionsByAgentProvider);
                           ref.read(selectedSessionIdProvider.notifier).state = sessionId;
+                          _refreshViews();
                         },
                   child: const Text('New session'),
                 ),
@@ -194,7 +195,6 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
                         itemBuilder: (context, index) {
                           final item = timeline[index];
                           final text = item.event.payload['text']?.toString() ?? item.event.payload.toString();
-                          final isHeartbeat = item.event.type == EventType.heartbeat;
                           return Align(
                             alignment: Alignment.centerLeft,
                             child: Card(
@@ -210,7 +210,7 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
                                       crossAxisAlignment: WrapCrossAlignment.center,
                                       children: [
                                         _stateChip(item.state),
-                                        Text(isHeartbeat ? 'heartbeat' : 'human'),
+                                        Text(_sourceLabel(item.event.type)),
                                         if (item.state == QueueState.failed || item.state == QueueState.deadLetter)
                                           TextButton(
                                             onPressed: () async {
@@ -246,15 +246,12 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
                   ),
                 ),
                 const SizedBox(width: 8),
-                ElevatedButton(
-                  onPressed: () => _sendMessage(selectedAgent, selectedSession),
-                  child: const Text('Send'),
-                ),
+                ElevatedButton(onPressed: () => _sendMessage(selectedAgent, selectedSession), child: const Text('Send')),
               ],
             ),
             const SizedBox(height: 8),
             const Text(
-              'Process now remains as fallback when OS background execution is constrained. Heartbeats now auto-trigger processing on timer/resume/manual run.',
+              'Process now remains fallback when OS background execution is constrained. Heartbeat + cron schedulers run best-effort via timer/resume/manual checks.',
               style: TextStyle(fontSize: 12),
             ),
           ],
@@ -263,12 +260,14 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
     );
   }
 
-  Future<void> _runHeartbeatTick() async {
+  Future<void> _runSchedulersTick() async {
     await ref.read(heartbeatServiceProvider).triggerDueHeartbeats();
+    await ref.read(cronServiceProvider).triggerDueSchedules();
     _refreshViews();
   }
 
   void _refreshViews() {
+    if (!mounted) return;
     ref.invalidate(timelineProvider);
     ref.invalidate(queueViewProvider);
     ref.invalidate(sessionsByAgentProvider);
@@ -303,6 +302,19 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
         color = Colors.purple;
     }
     return Chip(label: Text(queueStateLabel(state)), backgroundColor: color.withOpacity(0.2));
+  }
+
+  String _sourceLabel(EventType type) {
+    switch (type) {
+      case EventType.humanMessage:
+        return 'human';
+      case EventType.heartbeat:
+        return 'heartbeat';
+      case EventType.cron:
+        return 'cron';
+      default:
+        return type.name;
+    }
   }
 }
 
@@ -375,6 +387,110 @@ class _HeartbeatConfigCard extends ConsumerWidget {
   }
 
   String _formatMinutes(int value) {
+    final hour = (value ~/ 60).toString().padLeft(2, '0');
+    final minute = (value % 60).toString().padLeft(2, '0');
+    return '$hour:$minute';
+  }
+}
+
+class _CronSchedulesCard extends ConsumerWidget {
+  const _CronSchedulesCard({required this.agentId, required this.selectedSessionId});
+
+  final String? agentId;
+  final String? selectedSessionId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (agentId == null) return const SizedBox.shrink();
+
+    return FutureBuilder<List<CronSchedule>>(
+      future: ref.read(databaseProvider).listCronSchedulesByAgent(agentId!),
+      builder: (context, snapshot) {
+        final schedules = snapshot.data ?? [];
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Text('Cron schedules', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Spacer(),
+                    IconButton(
+                      tooltip: 'Create schedule',
+                      onPressed: selectedSessionId == null
+                          ? null
+                          : () async {
+                              await ref.read(cronServiceProvider).createDefaultSchedule(
+                                agentId: agentId!,
+                                sessionId: selectedSessionId!,
+                                channelId: 'mobile-chat',
+                              );
+                              ref.invalidate(agentsProvider);
+                            },
+                      icon: const Icon(Icons.add),
+                    ),
+                  ],
+                ),
+                for (final schedule in schedules)
+                  ListTile(
+                    dense: true,
+                    title: Text(_title(schedule)),
+                    subtitle: Text('${schedule.missedRunPolicy.name} • next: ${_next(schedule)}'),
+                    trailing: Wrap(
+                      spacing: 4,
+                      children: [
+                        Switch(
+                          value: schedule.enabled,
+                          onChanged: (value) async {
+                            await ref.read(databaseProvider).upsertCronSchedule(schedule.copyWith(enabled: value));
+                            ref.invalidate(agentsProvider);
+                          },
+                        ),
+                        IconButton(
+                          tooltip: 'Run now',
+                          onPressed: () => ref.read(cronServiceProvider).runScheduleNow(schedule.scheduleId),
+                          icon: const Icon(Icons.play_circle),
+                        ),
+                        IconButton(
+                          tooltip: 'Delete',
+                          onPressed: () async {
+                            await ref.read(databaseProvider).deleteCronSchedule(schedule.scheduleId);
+                            ref.invalidate(agentsProvider);
+                          },
+                          icon: const Icon(Icons.delete),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (schedules.isEmpty)
+                  const Text('No schedules yet. Select a session and add one to test daily/weekly/custom cron flows.'),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  String _title(CronSchedule schedule) {
+    switch (schedule.rule.type) {
+      case CronScheduleType.daily:
+        return 'Daily @ ${_formatMinute(schedule.rule.timeOfDayMinute ?? 0)}';
+      case CronScheduleType.weekly:
+        return 'Weekly d${schedule.rule.weekday ?? 1} @ ${_formatMinute(schedule.rule.timeOfDayMinute ?? 0)}';
+      case CronScheduleType.custom:
+        return 'Custom every ${schedule.rule.everyNMinutes ?? 60}m';
+    }
+  }
+
+  String _next(CronSchedule schedule) {
+    if (schedule.nextRunAt == null) return 'n/a';
+    return DateTime.fromMillisecondsSinceEpoch(schedule.nextRunAt!).toLocal().toString();
+  }
+
+  String _formatMinute(int value) {
     final hour = (value ~/ 60).toString().padLeft(2, '0');
     final minute = (value % 60).toString().padLeft(2, '0');
     return '$hour:$minute';

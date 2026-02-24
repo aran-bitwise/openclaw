@@ -2,6 +2,10 @@ enum EventType { humanMessage, heartbeat, cron, hook, webhook }
 
 enum QueueState { queued, processing, completed, failed, deadLetter }
 
+enum MissedRunPolicy { skip, catchUp }
+
+enum CronScheduleType { daily, weekly, custom }
+
 abstract class VersionedEntity {
   int get schemaVersion;
   Map<String, dynamic> toJson();
@@ -96,6 +100,126 @@ class HeartbeatSettings {
       suppressedUntil: suppressedUntil ?? this.suppressedUntil,
       suppressionToken: suppressionToken ?? this.suppressionToken,
       suppressionWindowMinutes: suppressionWindowMinutes ?? this.suppressionWindowMinutes,
+    );
+  }
+}
+
+class CronScheduleRule {
+  CronScheduleRule({
+    required this.type,
+    this.timeOfDayMinute,
+    this.weekday,
+    this.everyNMinutes,
+  });
+
+  final CronScheduleType type;
+  final int? timeOfDayMinute;
+  final int? weekday;
+  final int? everyNMinutes;
+
+  factory CronScheduleRule.fromJson(Map<String, dynamic> json) {
+    final type = CronScheduleType.values.byName(json['type'] as String);
+    return CronScheduleRule(
+      type: type,
+      timeOfDayMinute: json['timeOfDayMinute'] as int?,
+      weekday: json['weekday'] as int?,
+      everyNMinutes: json['everyNMinutes'] as int?,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'type': type.name,
+    'timeOfDayMinute': timeOfDayMinute,
+    'weekday': weekday,
+    'everyNMinutes': everyNMinutes,
+  };
+}
+
+class CronSchedule implements VersionedEntity {
+  CronSchedule({
+    required this.scheduleId,
+    required this.agentId,
+    required this.channelId,
+    required this.sessionId,
+    required this.enabled,
+    required this.rule,
+    required this.timezoneId,
+    required this.missedRunPolicy,
+    required this.promptTemplate,
+    this.lastRunAt,
+    this.nextRunAt,
+    this.schemaVersion = 1,
+  });
+
+  final String scheduleId;
+  final String agentId;
+  final String channelId;
+  final String sessionId;
+  final bool enabled;
+  final CronScheduleRule rule;
+  final String timezoneId;
+  final MissedRunPolicy missedRunPolicy;
+  final String promptTemplate;
+  final int? lastRunAt;
+  final int? nextRunAt;
+
+  @override
+  final int schemaVersion;
+
+  factory CronSchedule.fromJson(Map<String, dynamic> json) => CronSchedule(
+    scheduleId: json['scheduleId'] as String,
+    agentId: json['agentId'] as String,
+    channelId: json['channelId'] as String,
+    sessionId: json['sessionId'] as String,
+    enabled: json['enabled'] as bool? ?? true,
+    rule: CronScheduleRule.fromJson(Map<String, dynamic>.from(json['rule'] as Map)),
+    timezoneId: json['timezoneId'] as String? ?? 'local-device',
+    missedRunPolicy: MissedRunPolicy.values.byName(json['missedRunPolicy'] as String? ?? 'skip'),
+    promptTemplate: json['promptTemplate'] as String,
+    lastRunAt: json['lastRunAt'] as int?,
+    nextRunAt: json['nextRunAt'] as int?,
+    schemaVersion: json['schemaVersion'] as int? ?? 1,
+  );
+
+  @override
+  Map<String, dynamic> toJson() => {
+    'scheduleId': scheduleId,
+    'agentId': agentId,
+    'channelId': channelId,
+    'sessionId': sessionId,
+    'enabled': enabled,
+    'rule': rule.toJson(),
+    'timezoneId': timezoneId,
+    'missedRunPolicy': missedRunPolicy.name,
+    'promptTemplate': promptTemplate,
+    'lastRunAt': lastRunAt,
+    'nextRunAt': nextRunAt,
+    'schemaVersion': schemaVersion,
+  };
+
+  CronSchedule copyWith({
+    bool? enabled,
+    CronScheduleRule? rule,
+    String? channelId,
+    String? sessionId,
+    MissedRunPolicy? missedRunPolicy,
+    String? promptTemplate,
+    int? lastRunAt,
+    int? nextRunAt,
+  }) {
+    return CronSchedule(
+      scheduleId: scheduleId,
+      agentId: agentId,
+      channelId: channelId ?? this.channelId,
+      sessionId: sessionId ?? this.sessionId,
+      enabled: enabled ?? this.enabled,
+      rule: rule ?? this.rule,
+      timezoneId: timezoneId,
+      missedRunPolicy: missedRunPolicy ?? this.missedRunPolicy,
+      promptTemplate: promptTemplate ?? this.promptTemplate,
+      lastRunAt: lastRunAt ?? this.lastRunAt,
+      nextRunAt: nextRunAt ?? this.nextRunAt,
+      schemaVersion: schemaVersion,
     );
   }
 }

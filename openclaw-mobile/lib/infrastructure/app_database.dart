@@ -16,7 +16,7 @@ class AppDatabase extends GeneratedDatabase {
   static QueryExecutor _openConnection() => driftDatabase(name: 'openclaw_mobile');
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   Future<void> init() async {
     await customStatement('''
@@ -72,6 +72,23 @@ class AppDatabase extends GeneratedDatabase {
         event_id TEXT NOT NULL,
         output TEXT NOT NULL,
         completed_at INTEGER NOT NULL,
+        schema_version INTEGER NOT NULL
+      )
+    ''');
+
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS cron_schedules (
+        schedule_id TEXT PRIMARY KEY,
+        agent_id TEXT NOT NULL,
+        channel_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        enabled INTEGER NOT NULL,
+        rule_json TEXT NOT NULL,
+        timezone_id TEXT NOT NULL,
+        missed_run_policy TEXT NOT NULL,
+        prompt_template TEXT NOT NULL,
+        last_run_at INTEGER,
+        next_run_at INTEGER,
         schema_version INTEGER NOT NULL
       )
     ''');
@@ -307,6 +324,72 @@ class AppDatabase extends GeneratedDatabase {
       [QueueState.queued.name, now, now, item.id],
     );
     return true;
+  }
+
+
+  Future<void> upsertCronSchedule(CronSchedule schedule) async {
+    await customStatement(
+      'INSERT OR REPLACE INTO cron_schedules (schedule_id,agent_id,channel_id,session_id,enabled,rule_json,timezone_id,missed_run_policy,prompt_template,last_run_at,next_run_at,schema_version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+      [
+        schedule.scheduleId,
+        schedule.agentId,
+        schedule.channelId,
+        schedule.sessionId,
+        schedule.enabled ? 1 : 0,
+        jsonEncode(schedule.rule.toJson()),
+        schedule.timezoneId,
+        schedule.missedRunPolicy.name,
+        schedule.promptTemplate,
+        schedule.lastRunAt,
+        schedule.nextRunAt,
+        schedule.schemaVersion,
+      ],
+    );
+  }
+
+  Future<void> deleteCronSchedule(String scheduleId) async {
+    await customStatement('DELETE FROM cron_schedules WHERE schedule_id = ?', [scheduleId]);
+  }
+
+  Future<CronSchedule?> getCronSchedule(String scheduleId) async {
+    final rows = await customSelect(
+      'SELECT * FROM cron_schedules WHERE schedule_id = ? LIMIT 1',
+      variables: [Variable.withString(scheduleId)],
+    ).get();
+    if (rows.isEmpty) return null;
+    return _cronScheduleFromRow(rows.first);
+  }
+
+  Future<List<CronSchedule>> listCronSchedulesByAgent(String agentId) async {
+    final rows = await customSelect(
+      'SELECT * FROM cron_schedules WHERE agent_id = ? ORDER BY schedule_id ASC',
+      variables: [Variable.withString(agentId)],
+    ).get();
+    return rows.map(_cronScheduleFromRow).toList();
+  }
+
+  Future<List<CronSchedule>> listCronSchedules() async {
+    final rows = await customSelect('SELECT * FROM cron_schedules ORDER BY schedule_id ASC').get();
+    return rows.map(_cronScheduleFromRow).toList();
+  }
+
+  CronSchedule _cronScheduleFromRow(QueryRow row) {
+    return CronSchedule(
+      scheduleId: row.read<String>('schedule_id'),
+      agentId: row.read<String>('agent_id'),
+      channelId: row.read<String>('channel_id'),
+      sessionId: row.read<String>('session_id'),
+      enabled: row.read<int>('enabled') == 1,
+      rule: CronScheduleRule.fromJson(
+        Map<String, dynamic>.from(jsonDecode(row.read<String>('rule_json')) as Map),
+      ),
+      timezoneId: row.read<String>('timezone_id'),
+      missedRunPolicy: MissedRunPolicy.values.byName(row.read<String>('missed_run_policy')),
+      promptTemplate: row.read<String>('prompt_template'),
+      lastRunAt: row.read<int?>('last_run_at'),
+      nextRunAt: row.read<int?>('next_run_at'),
+      schemaVersion: row.read<int>('schema_version'),
+    );
   }
 
   Future<void> insertRunResult(RunResult result) async {

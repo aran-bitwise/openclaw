@@ -104,3 +104,7 @@ flowchart TD
 6. Verify output includes suppression token path and future triggers are skipped while suppression window is active.
 7. Kill app mid-processing, relaunch, and verify queue state and suppression metadata persist.
 8. Use `Process now` only as fallback when background processing does not progress automatically.
+
+## Next milestone
+
+- Milestone 7 cron jobs implementation: /flutter-openclaw-mobile/m7-cron-jobs-implementation

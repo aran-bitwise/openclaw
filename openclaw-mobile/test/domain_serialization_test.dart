@@ -23,4 +23,26 @@ void main() {
     expect(roundTrip.heartbeat.enabled, isTrue);
     expect(roundTrip.heartbeat.intervalMinutes, 15);
   });
+
+  test('cron schedule serialization round-trip', () {
+    final schedule = CronSchedule(
+      scheduleId: 'cron-1',
+      agentId: 'a1',
+      channelId: 'mobile-chat',
+      sessionId: 's1',
+      enabled: true,
+      rule: CronScheduleRule(type: CronScheduleType.custom, everyNMinutes: 30),
+      timezoneId: 'local-device',
+      missedRunPolicy: MissedRunPolicy.catchUp,
+      promptTemplate: 'Do cron work',
+      lastRunAt: 10,
+      nextRunAt: 20,
+    );
+
+    final roundTrip = CronSchedule.fromJson(schedule.toJson());
+    expect(roundTrip.scheduleId, 'cron-1');
+    expect(roundTrip.rule.type, CronScheduleType.custom);
+    expect(roundTrip.rule.everyNMinutes, 30);
+    expect(roundTrip.missedRunPolicy, MissedRunPolicy.catchUp);
+  });
 }

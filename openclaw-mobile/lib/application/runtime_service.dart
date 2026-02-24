@@ -81,6 +81,34 @@ class RuntimeService {
     );
   }
 
+
+  Future<bool> sendCron({
+    required String agentId,
+    required String sessionId,
+    required String channelId,
+    required String prompt,
+    required String scheduleId,
+    required int dueAt,
+    required String idempotencyKey,
+  }) {
+    return ingestEnvelope(
+      InboundEnvelope(
+        channelId: channelId,
+        agentId: agentId,
+        sessionId: sessionId,
+        eventType: EventType.cron,
+        idempotencyKey: idempotencyKey,
+        payload: {
+          'text': prompt,
+          'source': 'cron',
+          'scheduleId': scheduleId,
+          'dueAt': dueAt,
+          'generatedAt': _clock.now().toIso8601String(),
+        },
+      ),
+    );
+  }
+
   Future<void> updateHeartbeatSettings(String agentId, HeartbeatSettings settings) async {
     final agent = await _db.getAgent(agentId);
     if (agent == null) return;

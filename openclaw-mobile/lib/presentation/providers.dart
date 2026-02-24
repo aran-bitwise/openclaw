@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../application/clock.dart';
+import '../application/cron_service.dart';
 import '../application/gateway_router.dart';
 import '../application/heartbeat_service.dart';
 import '../application/queue_processor.dart';
@@ -23,6 +24,16 @@ final runtimeProvider = Provider<RuntimeService>((ref) {
 
 final queueProcessorProvider = Provider<QueueProcessor>((ref) {
   return QueueProcessor(ref.watch(databaseProvider), ref.watch(clockProvider));
+});
+
+
+final cronServiceProvider = Provider<CronService>((ref) {
+  return CronService(
+    ref.watch(databaseProvider),
+    ref.watch(runtimeProvider),
+    ref.watch(queueProcessorProvider),
+    ref.watch(clockProvider),
+  );
 });
 
 final heartbeatServiceProvider = Provider<HeartbeatService>((ref) {
