@@ -114,3 +114,7 @@ Deviation rationale:
 - unit: status-chip mapping labels
 - integration: rapid sends ordering, no interleaving, idempotency rejection
 - failure: retry action changes state from failed/dead-letter to queued
+
+## Next milestone
+
+- Milestone 6 heartbeat implementation: /flutter-openclaw-mobile/m6-heartbeats-implementation

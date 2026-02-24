@@ -2,13 +2,15 @@ import 'package:uuid/uuid.dart';
 
 import '../domain/models.dart';
 import '../infrastructure/app_database.dart';
+import 'clock.dart';
 import 'gateway_router.dart';
 
 class RuntimeService {
-  RuntimeService(this._db, this._router);
+  RuntimeService(this._db, this._router, this._clock);
 
   final AppDatabase _db;
   final GatewayRouter _router;
+  final Clock _clock;
   final _uuid = const Uuid();
 
   Future<bool> ingestEnvelope(InboundEnvelope envelope) async {
@@ -18,7 +20,7 @@ class RuntimeService {
         id: route.sessionId,
         agentId: route.agentId,
         channelId: route.channelId,
-        createdAt: DateTime.now().millisecondsSinceEpoch,
+        createdAt: _clock.now().millisecondsSinceEpoch,
       ),
     );
 
@@ -28,7 +30,7 @@ class RuntimeService {
       type: envelope.eventType,
       payload: envelope.payload,
       idempotencyKey: envelope.idempotencyKey,
-      createdAt: DateTime.now().millisecondsSinceEpoch,
+      createdAt: _clock.now().millisecondsSinceEpoch,
     );
     final inserted = await _db.insertEvent(event);
     if (!inserted) return false;
@@ -51,9 +53,38 @@ class RuntimeService {
         sessionId: sessionId,
         eventType: EventType.humanMessage,
         idempotencyKey: idempotencyKey ?? 'msg-${_uuid.v4()}',
-        payload: {'text': text},
+        payload: {'text': text, 'source': 'human'},
       ),
     );
+  }
+
+  Future<bool> sendHeartbeat({
+    required String agentId,
+    required String sessionId,
+    required String channelId,
+    required String prompt,
+    required String idempotencyKey,
+  }) {
+    return ingestEnvelope(
+      InboundEnvelope(
+        channelId: channelId,
+        agentId: agentId,
+        sessionId: sessionId,
+        eventType: EventType.heartbeat,
+        idempotencyKey: idempotencyKey,
+        payload: {
+          'text': prompt,
+          'source': 'heartbeat',
+          'generatedAt': _clock.now().toIso8601String(),
+        },
+      ),
+    );
+  }
+
+  Future<void> updateHeartbeatSettings(String agentId, HeartbeatSettings settings) async {
+    final agent = await _db.getAgent(agentId);
+    if (agent == null) return;
+    await _db.upsertAgent(agent.copyWith(heartbeat: settings));
   }
 
   Future<bool> retryEvent(String eventId) => _db.retryEvent(eventId);

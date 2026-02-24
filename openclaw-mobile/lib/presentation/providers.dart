@@ -1,23 +1,37 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../application/clock.dart';
 import '../application/gateway_router.dart';
+import '../application/heartbeat_service.dart';
 import '../application/queue_processor.dart';
 import '../application/runtime_service.dart';
 import '../domain/models.dart';
 import '../infrastructure/app_database.dart';
 
+final clockProvider = Provider<Clock>((_) => SystemClock());
+
 final databaseProvider = Provider<AppDatabase>((ref) {
-  final db = AppDatabase();
+  final clock = ref.watch(clockProvider);
+  final db = AppDatabase(nowMs: () => clock.now().millisecondsSinceEpoch);
   ref.onDispose(db.close);
   return db;
 });
 
 final runtimeProvider = Provider<RuntimeService>((ref) {
-  return RuntimeService(ref.watch(databaseProvider), GatewayRouter());
+  return RuntimeService(ref.watch(databaseProvider), GatewayRouter(), ref.watch(clockProvider));
 });
 
 final queueProcessorProvider = Provider<QueueProcessor>((ref) {
-  return QueueProcessor(ref.watch(databaseProvider));
+  return QueueProcessor(ref.watch(databaseProvider), ref.watch(clockProvider));
+});
+
+final heartbeatServiceProvider = Provider<HeartbeatService>((ref) {
+  return HeartbeatService(
+    ref.watch(databaseProvider),
+    ref.watch(runtimeProvider),
+    ref.watch(queueProcessorProvider),
+    ref.watch(clockProvider),
+  );
 });
 
 final agentsProvider = FutureProvider<List<AgentProfile>>((ref) async {

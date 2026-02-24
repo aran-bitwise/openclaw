@@ -1,24 +1,42 @@
 import 'package:drift/native.dart';
 import 'package:test/test.dart';
 
+import '../lib/application/clock.dart';
 import '../lib/application/gateway_router.dart';
 import '../lib/application/queue_processor.dart';
 import '../lib/application/runtime_service.dart';
 import '../lib/domain/models.dart';
 import '../lib/infrastructure/app_database.dart';
 
+class FakeClock implements Clock {
+  FakeClock(this._now);
+  DateTime _now;
+
+  @override
+  DateTime now() => _now;
+
+  void advance(Duration delta) {
+    _now = _now.add(delta);
+  }
+}
+
 void main() {
   late AppDatabase db;
   late RuntimeService runtime;
   late QueueProcessor processor;
+  late FakeClock clock;
 
   setUp(() async {
-    db = AppDatabase(executor: NativeDatabase.memory());
+    clock = FakeClock(DateTime(2026, 1, 1, 9, 0));
+    db = AppDatabase(
+      executor: NativeDatabase.memory(),
+      nowMs: () => clock.now().millisecondsSinceEpoch,
+    );
     await db.init();
-    runtime = RuntimeService(db, GatewayRouter());
-    processor = QueueProcessor(db);
+    runtime = RuntimeService(db, GatewayRouter(), clock);
+    processor = QueueProcessor(db, clock);
     await db.upsertSession(
-      Session(id: 's1', agentId: 'a1', channelId: 'c1', createdAt: DateTime.now().millisecondsSinceEpoch),
+      Session(id: 's1', agentId: 'a1', channelId: 'c1', createdAt: clock.now().millisecondsSinceEpoch),
     );
   });
 
@@ -60,6 +78,7 @@ void main() {
       text: 'first',
       idempotencyKey: 'k1',
     );
+    clock.advance(const Duration(milliseconds: 5));
     await runtime.sendHumanMessage(
       agentId: 'a1',
       sessionId: 's1',
@@ -115,7 +134,7 @@ void main() {
         type: EventType.humanMessage,
         payload: const {'text': 'fail'},
         idempotencyKey: 'fail-key',
-        createdAt: DateTime.now().millisecondsSinceEpoch,
+        createdAt: clock.now().millisecondsSinceEpoch,
       ),
     );
     expect(inserted, isTrue);

@@ -7,12 +7,16 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../domain/models.dart';
 
 class AppDatabase extends GeneratedDatabase {
-  AppDatabase({QueryExecutor? executor}) : super(executor ?? _openConnection());
+  AppDatabase({QueryExecutor? executor, int Function()? nowMs})
+    : _nowMs = nowMs ?? (() => DateTime.now().millisecondsSinceEpoch),
+      super(executor ?? _openConnection());
+
+  final int Function() _nowMs;
 
   static QueryExecutor _openConnection() => driftDatabase(name: 'openclaw_mobile');
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   Future<void> init() async {
     await customStatement('''
@@ -20,9 +24,14 @@ class AppDatabase extends GeneratedDatabase {
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         created_at INTEGER NOT NULL,
+        heartbeat_json TEXT,
         schema_version INTEGER NOT NULL
       )
     ''');
+    if (!await _hasColumn('agents', 'heartbeat_json')) {
+      await customStatement('ALTER TABLE agents ADD COLUMN heartbeat_json TEXT');
+    }
+
     await customStatement('''
       CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
@@ -68,25 +77,51 @@ class AppDatabase extends GeneratedDatabase {
     ''');
   }
 
+  Future<bool> _hasColumn(String tableName, String columnName) async {
+    final rows = await customSelect('PRAGMA table_info($tableName)').get();
+    return rows.any((row) => row.read<String>('name') == columnName);
+  }
+
   Future<void> upsertAgent(AgentProfile profile) async {
     await customStatement(
-      'INSERT OR REPLACE INTO agents (id,name,created_at,schema_version) VALUES (?,?,?,?)',
-      [profile.id, profile.name, profile.createdAt, profile.schemaVersion],
+      'INSERT OR REPLACE INTO agents (id,name,created_at,heartbeat_json,schema_version) VALUES (?,?,?,?,?)',
+      [
+        profile.id,
+        profile.name,
+        profile.createdAt,
+        jsonEncode(profile.heartbeat.toJson()),
+        profile.schemaVersion,
+      ],
     );
+  }
+
+  Future<AgentProfile?> getAgent(String agentId) async {
+    final rows = await customSelect(
+      'SELECT * FROM agents WHERE id = ? LIMIT 1',
+      variables: [Variable.withString(agentId)],
+    ).get();
+    if (rows.isEmpty) return null;
+    return _agentFromRow(rows.first);
   }
 
   Future<List<AgentProfile>> listAgents() async {
     final rows = await customSelect('SELECT * FROM agents ORDER BY created_at DESC').get();
-    return rows
-        .map(
-          (row) => AgentProfile(
-            id: row.read<String>('id'),
-            name: row.read<String>('name'),
-            createdAt: row.read<int>('created_at'),
-            schemaVersion: row.read<int>('schema_version'),
-          ),
-        )
-        .toList();
+    return rows.map(_agentFromRow).toList();
+  }
+
+  AgentProfile _agentFromRow(QueryRow row) {
+    final rawHeartbeat = row.read<String?>('heartbeat_json');
+    final heartbeat = rawHeartbeat == null
+        ? HeartbeatSettings.disabled()
+        : HeartbeatSettings.fromJson(Map<String, dynamic>.from(jsonDecode(rawHeartbeat) as Map));
+
+    return AgentProfile(
+      id: row.read<String>('id'),
+      name: row.read<String>('name'),
+      createdAt: row.read<int>('created_at'),
+      heartbeat: heartbeat,
+      schemaVersion: row.read<int>('schema_version'),
+    );
   }
 
   Future<void> upsertSession(Session session) async {
@@ -96,19 +131,37 @@ class AppDatabase extends GeneratedDatabase {
     );
   }
 
-  Future<List<Session>> listSessions() async {
-    final rows = await customSelect('SELECT * FROM sessions ORDER BY created_at DESC').get();
-    return rows
-        .map(
-          (row) => Session(
-            id: row.read<String>('id'),
-            agentId: row.read<String>('agent_id'),
-            channelId: row.read<String>('channel_id'),
-            createdAt: row.read<int>('created_at'),
-            schemaVersion: row.read<int>('schema_version'),
-          ),
-        )
-        .toList();
+  Future<Session?> latestSessionForAgent(String agentId) async {
+    final rows = await customSelect(
+      'SELECT * FROM sessions WHERE agent_id = ? ORDER BY created_at DESC LIMIT 1',
+      variables: [Variable.withString(agentId)],
+    ).get();
+    if (rows.isEmpty) return null;
+    final row = rows.first;
+    return Session(
+      id: row.read<String>('id'),
+      agentId: row.read<String>('agent_id'),
+      channelId: row.read<String>('channel_id'),
+      createdAt: row.read<int>('created_at'),
+      schemaVersion: row.read<int>('schema_version'),
+    );
+  }
+
+
+  Future<Session?> getSessionById(String sessionId) async {
+    final rows = await customSelect(
+      'SELECT * FROM sessions WHERE id = ? LIMIT 1',
+      variables: [Variable.withString(sessionId)],
+    ).get();
+    if (rows.isEmpty) return null;
+    final row = rows.first;
+    return Session(
+      id: row.read<String>('id'),
+      agentId: row.read<String>('agent_id'),
+      channelId: row.read<String>('channel_id'),
+      createdAt: row.read<int>('created_at'),
+      schemaVersion: row.read<int>('schema_version'),
+    );
   }
 
   Future<List<Session>> listSessionsByAgent(String agentId) async {
@@ -149,12 +202,14 @@ class AppDatabase extends GeneratedDatabase {
     }
   }
 
-  Future<List<Event>> listEventsBySession(String sessionId) async {
+
+  Future<Event?> getEventById(String eventId) async {
     final rows = await customSelect(
-      'SELECT * FROM events WHERE session_id = ? ORDER BY created_at ASC',
-      variables: [Variable.withString(sessionId)],
+      'SELECT * FROM events WHERE id = ? LIMIT 1',
+      variables: [Variable.withString(eventId)],
     ).get();
-    return rows.map(_eventFromRow).toList();
+    if (rows.isEmpty) return null;
+    return _eventFromRow(rows.first);
   }
 
   Future<List<TimelineItem>> listTimelineBySession(String sessionId) async {
@@ -191,7 +246,7 @@ class AppDatabase extends GeneratedDatabase {
   }
 
   Future<void> enqueue({required String queueId, required String eventId, required String sessionId}) async {
-    final now = DateTime.now().millisecondsSinceEpoch;
+    final now = _nowMs();
     await customStatement(
       'INSERT OR REPLACE INTO queue_items (id,event_id,session_id,state,attempt_count,max_attempts,next_attempt_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)',
       [queueId, eventId, sessionId, QueueState.queued.name, 0, 3, now, now, now],
@@ -199,7 +254,7 @@ class AppDatabase extends GeneratedDatabase {
   }
 
   Future<QueueItem?> dequeueNextEligible() async {
-    final now = DateTime.now().millisecondsSinceEpoch;
+    final now = _nowMs();
     final rows = await customSelect('''
       SELECT q.* FROM queue_items q
       WHERE q.state IN ('queued','failed')
@@ -217,7 +272,7 @@ class AppDatabase extends GeneratedDatabase {
   }
 
   Future<void> updateQueueState(String id, QueueState state, {int? nextAttemptAt}) async {
-    final now = DateTime.now().millisecondsSinceEpoch;
+    final now = _nowMs();
     await customStatement(
       'UPDATE queue_items SET state = ?, next_attempt_at = ?, updated_at = ? WHERE id = ?',
       [state.name, nextAttemptAt ?? now, now, id],
@@ -229,7 +284,7 @@ class AppDatabase extends GeneratedDatabase {
   Future<void> markCompleted(String id) => updateQueueState(id, QueueState.completed);
 
   Future<void> markFailure(String id, int attemptCount, int maxAttempts) async {
-    final now = DateTime.now().millisecondsSinceEpoch;
+    final now = _nowMs();
     final dead = attemptCount >= maxAttempts;
     final state = dead ? QueueState.deadLetter : QueueState.failed;
     final nextAttempt = dead ? now : now + (1000 * (1 << attemptCount));
@@ -246,14 +301,10 @@ class AppDatabase extends GeneratedDatabase {
     ).get();
     if (rows.isEmpty) return false;
     final item = _queueItemFromRow(rows.first);
+    final now = _nowMs();
     await customStatement(
       'UPDATE queue_items SET state = ?, attempt_count = 0, next_attempt_at = ?, updated_at = ? WHERE id = ?',
-      [
-        QueueState.queued.name,
-        DateTime.now().millisecondsSinceEpoch,
-        DateTime.now().millisecondsSinceEpoch,
-        item.id,
-      ],
+      [QueueState.queued.name, now, now, item.id],
     );
     return true;
   }
@@ -264,7 +315,6 @@ class AppDatabase extends GeneratedDatabase {
       [result.id, result.eventId, result.output, result.completedAt, result.schemaVersion],
     );
   }
-
 
   Future<List<RunResult>> listRunResultsByEvent(String eventId) async {
     final rows = await customSelect(

@@ -7,17 +7,112 @@ abstract class VersionedEntity {
   Map<String, dynamic> toJson();
 }
 
+class ActiveHoursWindow {
+  ActiveHoursWindow({required this.startMinuteOfDay, required this.endMinuteOfDay});
+
+  final int startMinuteOfDay;
+  final int endMinuteOfDay;
+
+  factory ActiveHoursWindow.fromJson(Map<String, dynamic> json) => ActiveHoursWindow(
+    startMinuteOfDay: json['startMinuteOfDay'] as int,
+    endMinuteOfDay: json['endMinuteOfDay'] as int,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'startMinuteOfDay': startMinuteOfDay,
+    'endMinuteOfDay': endMinuteOfDay,
+  };
+}
+
+class HeartbeatSettings {
+  HeartbeatSettings({
+    required this.enabled,
+    required this.intervalMinutes,
+    required this.activeHours,
+    required this.promptTemplate,
+    this.lastFiredAt,
+    this.suppressedUntil,
+    this.suppressionToken = 'HEARTBEAT_OK',
+    this.suppressionWindowMinutes = 120,
+  });
+
+  final bool enabled;
+  final int intervalMinutes;
+  final ActiveHoursWindow activeHours;
+  final String promptTemplate;
+  final int? lastFiredAt;
+  final int? suppressedUntil;
+  final String suppressionToken;
+  final int suppressionWindowMinutes;
+
+  factory HeartbeatSettings.disabled() => HeartbeatSettings(
+    enabled: false,
+    intervalMinutes: 30,
+    activeHours: ActiveHoursWindow(startMinuteOfDay: 8 * 60, endMinuteOfDay: 21 * 60),
+    promptTemplate: 'Quick status check-in. Reply HEARTBEAT_OK if no action is needed.',
+  );
+
+  factory HeartbeatSettings.fromJson(Map<String, dynamic> json) => HeartbeatSettings(
+    enabled: json['enabled'] as bool? ?? false,
+    intervalMinutes: json['intervalMinutes'] as int? ?? 30,
+    activeHours: json['activeHours'] is Map
+        ? ActiveHoursWindow.fromJson(Map<String, dynamic>.from(json['activeHours'] as Map))
+        : ActiveHoursWindow(startMinuteOfDay: 8 * 60, endMinuteOfDay: 21 * 60),
+    promptTemplate:
+        json['promptTemplate'] as String? ?? 'Quick status check-in. Reply HEARTBEAT_OK if no action is needed.',
+    lastFiredAt: json['lastFiredAt'] as int?,
+    suppressedUntil: json['suppressedUntil'] as int?,
+    suppressionToken: json['suppressionToken'] as String? ?? 'HEARTBEAT_OK',
+    suppressionWindowMinutes: json['suppressionWindowMinutes'] as int? ?? 120,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'enabled': enabled,
+    'intervalMinutes': intervalMinutes,
+    'activeHours': activeHours.toJson(),
+    'promptTemplate': promptTemplate,
+    'lastFiredAt': lastFiredAt,
+    'suppressedUntil': suppressedUntil,
+    'suppressionToken': suppressionToken,
+    'suppressionWindowMinutes': suppressionWindowMinutes,
+  };
+
+  HeartbeatSettings copyWith({
+    bool? enabled,
+    int? intervalMinutes,
+    ActiveHoursWindow? activeHours,
+    String? promptTemplate,
+    int? lastFiredAt,
+    int? suppressedUntil,
+    String? suppressionToken,
+    int? suppressionWindowMinutes,
+  }) {
+    return HeartbeatSettings(
+      enabled: enabled ?? this.enabled,
+      intervalMinutes: intervalMinutes ?? this.intervalMinutes,
+      activeHours: activeHours ?? this.activeHours,
+      promptTemplate: promptTemplate ?? this.promptTemplate,
+      lastFiredAt: lastFiredAt ?? this.lastFiredAt,
+      suppressedUntil: suppressedUntil ?? this.suppressedUntil,
+      suppressionToken: suppressionToken ?? this.suppressionToken,
+      suppressionWindowMinutes: suppressionWindowMinutes ?? this.suppressionWindowMinutes,
+    );
+  }
+}
+
 class AgentProfile implements VersionedEntity {
   AgentProfile({
     required this.id,
     required this.name,
     required this.createdAt,
-    this.schemaVersion = 1,
-  });
+    HeartbeatSettings? heartbeat,
+    this.schemaVersion = 2,
+  }) : heartbeat = heartbeat ?? HeartbeatSettings.disabled();
 
   final String id;
   final String name;
   final int createdAt;
+  final HeartbeatSettings heartbeat;
   @override
   final int schemaVersion;
 
@@ -25,6 +120,9 @@ class AgentProfile implements VersionedEntity {
     id: json['id'] as String,
     name: json['name'] as String,
     createdAt: json['createdAt'] as int,
+    heartbeat: json['heartbeat'] is Map
+        ? HeartbeatSettings.fromJson(Map<String, dynamic>.from(json['heartbeat'] as Map))
+        : HeartbeatSettings.disabled(),
     schemaVersion: (json['schemaVersion'] as int?) ?? 1,
   );
 
@@ -33,18 +131,23 @@ class AgentProfile implements VersionedEntity {
     'id': id,
     'name': name,
     'createdAt': createdAt,
+    'heartbeat': heartbeat.toJson(),
     'schemaVersion': schemaVersion,
   };
+
+  AgentProfile copyWith({String? name, HeartbeatSettings? heartbeat}) {
+    return AgentProfile(
+      id: id,
+      name: name ?? this.name,
+      createdAt: createdAt,
+      heartbeat: heartbeat ?? this.heartbeat,
+      schemaVersion: schemaVersion,
+    );
+  }
 }
 
 class Session implements VersionedEntity {
-  Session({
-    required this.id,
-    required this.agentId,
-    required this.channelId,
-    required this.createdAt,
-    this.schemaVersion = 1,
-  });
+  Session({required this.id, required this.agentId, required this.channelId, required this.createdAt, this.schemaVersion = 1});
 
   final String id;
   final String agentId;
@@ -118,13 +221,7 @@ class Event implements VersionedEntity {
 }
 
 class MemoryEntry implements VersionedEntity {
-  MemoryEntry({
-    required this.id,
-    required this.sessionId,
-    required this.content,
-    required this.createdAt,
-    this.schemaVersion = 1,
-  });
+  MemoryEntry({required this.id, required this.sessionId, required this.content, required this.createdAt, this.schemaVersion = 1});
 
   final String id;
   final String sessionId;
@@ -152,13 +249,7 @@ class MemoryEntry implements VersionedEntity {
 }
 
 class ToolInvocation implements VersionedEntity {
-  ToolInvocation({
-    required this.id,
-    required this.eventId,
-    required this.toolName,
-    required this.status,
-    this.schemaVersion = 1,
-  });
+  ToolInvocation({required this.id, required this.eventId, required this.toolName, required this.status, this.schemaVersion = 1});
 
   final String id;
   final String eventId;
@@ -186,13 +277,7 @@ class ToolInvocation implements VersionedEntity {
 }
 
 class RunResult implements VersionedEntity {
-  RunResult({
-    required this.id,
-    required this.eventId,
-    required this.output,
-    required this.completedAt,
-    this.schemaVersion = 1,
-  });
+  RunResult({required this.id, required this.eventId, required this.output, required this.completedAt, this.schemaVersion = 1});
 
   final String id;
   final String eventId;

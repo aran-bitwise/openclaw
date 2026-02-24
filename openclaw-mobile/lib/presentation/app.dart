@@ -6,7 +6,6 @@ import 'package:uuid/uuid.dart';
 
 import '../application/status_mapper.dart';
 import '../domain/models.dart';
-import '../infrastructure/app_database.dart';
 import 'providers.dart';
 
 class OpenClawMobileApp extends ConsumerWidget {
@@ -29,14 +28,16 @@ class ChatWorkbenchScreen extends ConsumerStatefulWidget {
   ConsumerState<ChatWorkbenchScreen> createState() => _ChatWorkbenchScreenState();
 }
 
-class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> {
+class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with WidgetsBindingObserver {
   final _uuid = const Uuid();
   final _composer = TextEditingController();
   Timer? _refreshTimer;
+  Timer? _heartbeatTimer;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     Future<void>(() async {
       final db = ref.read(databaseProvider);
       await db.init();
@@ -45,6 +46,7 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> {
       );
       ref.invalidate(agentsProvider);
       ref.read(selectedAgentIdProvider.notifier).state = 'default-agent';
+      await _runHeartbeatTick();
     });
 
     _refreshTimer = Timer.periodic(const Duration(milliseconds: 600), (_) {
@@ -52,12 +54,25 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> {
       ref.invalidate(timelineProvider);
       ref.invalidate(queueViewProvider);
       ref.invalidate(sessionsByAgentProvider);
+      ref.invalidate(agentsProvider);
     });
+
+    // Best-effort scheduler until native Android WorkManager / iOS BGTask hooks land.
+    _heartbeatTimer = Timer.periodic(const Duration(minutes: 1), (_) => _runHeartbeatTick());
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _runHeartbeatTick();
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _refreshTimer?.cancel();
+    _heartbeatTimer?.cancel();
     _composer.dispose();
     super.dispose();
   }
@@ -72,16 +87,20 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('OpenClaw Chat (Milestone 5)'),
+        title: const Text('OpenClaw Chat (Milestone 6)'),
         actions: [
           IconButton(
             tooltip: 'Process now',
             onPressed: () async {
               await ref.read(queueProcessorProvider).tick();
-              ref.invalidate(timelineProvider);
-              ref.invalidate(queueViewProvider);
+              _refreshViews();
             },
             icon: const Icon(Icons.play_arrow),
+          ),
+          IconButton(
+            tooltip: 'Run heartbeat now',
+            onPressed: () => _runHeartbeatTick(),
+            icon: const Icon(Icons.favorite),
           ),
         ],
       ),
@@ -96,9 +115,7 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> {
                     data: (agents) => DropdownButtonFormField<String>(
                       value: selectedAgent,
                       decoration: const InputDecoration(labelText: 'Agent'),
-                      items: agents
-                          .map((a) => DropdownMenuItem(value: a.id, child: Text(a.name)))
-                          .toList(),
+                      items: agents.map((a) => DropdownMenuItem(value: a.id, child: Text(a.name))).toList(),
                       onChanged: (value) {
                         ref.read(selectedAgentIdProvider.notifier).state = value;
                         ref.read(selectedSessionIdProvider.notifier).state = null;
@@ -123,6 +140,8 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> {
                 ),
               ],
             ),
+            const SizedBox(height: 8),
+            _HeartbeatConfigCard(agentId: selectedAgent),
             const SizedBox(height: 8),
             Row(
               children: [
@@ -175,6 +194,7 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> {
                         itemBuilder: (context, index) {
                           final item = timeline[index];
                           final text = item.event.payload['text']?.toString() ?? item.event.payload.toString();
+                          final isHeartbeat = item.event.type == EventType.heartbeat;
                           return Align(
                             alignment: Alignment.centerLeft,
                             child: Card(
@@ -190,13 +210,12 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> {
                                       crossAxisAlignment: WrapCrossAlignment.center,
                                       children: [
                                         _stateChip(item.state),
-                                        Text(item.event.type.name),
+                                        Text(isHeartbeat ? 'heartbeat' : 'human'),
                                         if (item.state == QueueState.failed || item.state == QueueState.deadLetter)
                                           TextButton(
                                             onPressed: () async {
                                               await ref.read(runtimeProvider).retryEvent(item.event.id);
-                                              ref.invalidate(timelineProvider);
-                                              ref.invalidate(queueViewProvider);
+                                              _refreshViews();
                                             },
                                             child: const Text('Retry'),
                                           ),
@@ -235,7 +254,7 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'Process now is temporary for Milestone 5 due to no background worker loop yet; it will be replaced by scheduled/background processing in later milestones.',
+              'Process now remains as fallback when OS background execution is constrained. Heartbeats now auto-trigger processing on timer/resume/manual run.',
               style: TextStyle(fontSize: 12),
             ),
           ],
@@ -244,18 +263,29 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> {
     );
   }
 
+  Future<void> _runHeartbeatTick() async {
+    await ref.read(heartbeatServiceProvider).triggerDueHeartbeats();
+    _refreshViews();
+  }
+
+  void _refreshViews() {
+    ref.invalidate(timelineProvider);
+    ref.invalidate(queueViewProvider);
+    ref.invalidate(sessionsByAgentProvider);
+    ref.invalidate(agentsProvider);
+  }
+
   Future<void> _sendMessage(String? selectedAgent, String? selectedSession) async {
     if (selectedAgent == null || selectedSession == null || _composer.text.trim().isEmpty) return;
     final text = _composer.text.trim();
     _composer.clear();
     await ref.read(runtimeProvider).sendHumanMessage(
-          agentId: selectedAgent,
-          sessionId: selectedSession,
-          channelId: 'mobile-chat',
-          text: text,
-        );
-    ref.invalidate(timelineProvider);
-    ref.invalidate(queueViewProvider);
+      agentId: selectedAgent,
+      sessionId: selectedSession,
+      channelId: 'mobile-chat',
+      text: text,
+    );
+    _refreshViews();
   }
 
   Widget _stateChip(QueueState state) {
@@ -273,5 +303,80 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> {
         color = Colors.purple;
     }
     return Chip(label: Text(queueStateLabel(state)), backgroundColor: color.withOpacity(0.2));
+  }
+}
+
+class _HeartbeatConfigCard extends ConsumerWidget {
+  const _HeartbeatConfigCard({required this.agentId});
+
+  final String? agentId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (agentId == null) return const SizedBox.shrink();
+
+    return FutureBuilder<AgentProfile?>(
+      future: ref.read(databaseProvider).getAgent(agentId!),
+      builder: (context, snapshot) {
+        final agent = snapshot.data;
+        if (agent == null) return const SizedBox.shrink();
+        final hb = agent.heartbeat;
+
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Heartbeat settings', style: TextStyle(fontWeight: FontWeight.bold)),
+                SwitchListTile(
+                  title: const Text('Enabled'),
+                  value: hb.enabled,
+                  onChanged: (value) => _update(ref, agent, hb.copyWith(enabled: value)),
+                ),
+                Row(
+                  children: [
+                    const Text('Interval (min): '),
+                    DropdownButton<int>(
+                      value: hb.intervalMinutes,
+                      items: const [5, 10, 15, 30, 60]
+                          .map((m) => DropdownMenuItem(value: m, child: Text('$m')))
+                          .toList(),
+                      onChanged: (value) {
+                        if (value != null) _update(ref, agent, hb.copyWith(intervalMinutes: value));
+                      },
+                    ),
+                    const SizedBox(width: 16),
+                    Text('Active ${_formatMinutes(hb.activeHours.startMinuteOfDay)}-${_formatMinutes(hb.activeHours.endMinuteOfDay)}'),
+                  ],
+                ),
+                TextFormField(
+                  initialValue: hb.promptTemplate,
+                  decoration: const InputDecoration(labelText: 'Prompt template'),
+                  onFieldSubmitted: (value) => _update(ref, agent, hb.copyWith(promptTemplate: value.trim())),
+                ),
+                if (hb.suppressedUntil != null)
+                  Text(
+                    'Suppressed until: ${DateTime.fromMillisecondsSinceEpoch(hb.suppressedUntil!).toLocal()}',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _update(WidgetRef ref, AgentProfile agent, HeartbeatSettings settings) async {
+    final bounded = settings.copyWith(intervalMinutes: settings.intervalMinutes.clamp(5, 240).toInt());
+    await ref.read(runtimeProvider).updateHeartbeatSettings(agent.id, bounded);
+    ref.invalidate(agentsProvider);
+  }
+
+  String _formatMinutes(int value) {
+    final hour = (value ~/ 60).toString().padLeft(2, '0');
+    final minute = (value % 60).toString().padLeft(2, '0');
+    return '$hour:$minute';
   }
 }

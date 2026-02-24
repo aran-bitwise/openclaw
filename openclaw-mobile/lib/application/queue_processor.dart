@@ -2,10 +2,16 @@ import 'package:uuid/uuid.dart';
 
 import '../domain/models.dart';
 import '../infrastructure/app_database.dart';
+import 'clock.dart';
+
+typedef EventRunner = Future<String> Function(Event event);
 
 class QueueProcessor {
-  QueueProcessor(this._db);
+  QueueProcessor(this._db, this._clock, {EventRunner? runner}) : _runner = runner;
+
   final AppDatabase _db;
+  final Clock _clock;
+  final EventRunner? _runner;
   final _uuid = const Uuid();
 
   Future<void> tick() async {
@@ -15,26 +21,51 @@ class QueueProcessor {
     await _db.markProcessing(next.id);
 
     try {
-      final output = await _stubRun(next.eventId);
+      final event = await _db.getEventById(next.eventId);
+      if (event == null) {
+        await _db.markFailure(next.id, next.attemptCount + 1, next.maxAttempts);
+        return;
+      }
+
+      final output = await (_runner?.call(event) ?? _stubRun(event));
       await _db.insertRunResult(
         RunResult(
           id: _uuid.v4(),
           eventId: next.eventId,
           output: output,
-          completedAt: DateTime.now().millisecondsSinceEpoch,
+          completedAt: _clock.now().millisecondsSinceEpoch,
         ),
       );
+
+      await _applyHeartbeatSuppressionIfNeeded(event, output);
       await _db.markCompleted(next.id);
     } catch (_) {
       await _db.markFailure(next.id, next.attemptCount + 1, next.maxAttempts);
     }
   }
 
-  Future<String> _stubRun(String eventId) async {
+  Future<void> _applyHeartbeatSuppressionIfNeeded(Event event, String output) async {
+    if (event.type != EventType.heartbeat) return;
+    final session = await _db.getSessionById(event.sessionId);
+    if (session == null) return;
+    final agent = await _db.getAgent(session.agentId);
+    if (agent == null) return;
+
+    final hb = agent.heartbeat;
+    if (!output.contains(hb.suppressionToken)) return;
+
+    final suppressedUntil = _clock.now().add(Duration(minutes: hb.suppressionWindowMinutes)).millisecondsSinceEpoch;
+    await _db.upsertAgent(agent.copyWith(heartbeat: hb.copyWith(suppressedUntil: suppressedUntil)));
+  }
+
+  Future<String> _stubRun(Event event) async {
     await Future<void>.delayed(const Duration(milliseconds: 20));
-    if (eventId.contains('fail')) {
+    if (event.id.contains('fail')) {
       throw StateError('forced failure');
     }
-    return 'processed:$eventId';
+    if (event.type == EventType.heartbeat) {
+      return 'HEARTBEAT_OK';
+    }
+    return 'processed:${event.id}';
   }
 }
