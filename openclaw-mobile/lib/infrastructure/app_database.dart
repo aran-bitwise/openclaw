@@ -16,7 +16,7 @@ class AppDatabase extends GeneratedDatabase {
   static QueryExecutor _openConnection() => driftDatabase(name: 'openclaw_mobile');
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   Future<void> init() async {
     await customStatement('''
@@ -25,11 +25,15 @@ class AppDatabase extends GeneratedDatabase {
         name TEXT NOT NULL,
         created_at INTEGER NOT NULL,
         heartbeat_json TEXT,
+        hook_json TEXT,
         schema_version INTEGER NOT NULL
       )
     ''');
     if (!await _hasColumn('agents', 'heartbeat_json')) {
       await customStatement('ALTER TABLE agents ADD COLUMN heartbeat_json TEXT');
+    }
+    if (!await _hasColumn('agents', 'hook_json')) {
+      await customStatement('ALTER TABLE agents ADD COLUMN hook_json TEXT');
     }
 
     await customStatement('''
@@ -101,12 +105,13 @@ class AppDatabase extends GeneratedDatabase {
 
   Future<void> upsertAgent(AgentProfile profile) async {
     await customStatement(
-      'INSERT OR REPLACE INTO agents (id,name,created_at,heartbeat_json,schema_version) VALUES (?,?,?,?,?)',
+      'INSERT OR REPLACE INTO agents (id,name,created_at,heartbeat_json,hook_json,schema_version) VALUES (?,?,?,?,?,?)',
       [
         profile.id,
         profile.name,
         profile.createdAt,
         jsonEncode(profile.heartbeat.toJson()),
+        jsonEncode(profile.hooks.toJson()),
         profile.schemaVersion,
       ],
     );
@@ -131,12 +136,17 @@ class AppDatabase extends GeneratedDatabase {
     final heartbeat = rawHeartbeat == null
         ? HeartbeatSettings.disabled()
         : HeartbeatSettings.fromJson(Map<String, dynamic>.from(jsonDecode(rawHeartbeat) as Map));
+    final rawHooks = row.read<String?>('hook_json');
+    final hooks = rawHooks == null
+        ? HookSettings.defaults()
+        : HookSettings.fromJson(Map<String, dynamic>.from(jsonDecode(rawHooks) as Map));
 
     return AgentProfile(
       id: row.read<String>('id'),
       name: row.read<String>('name'),
       createdAt: row.read<int>('created_at'),
       heartbeat: heartbeat,
+      hooks: hooks,
       schemaVersion: row.read<int>('schema_version'),
     );
   }
@@ -260,6 +270,16 @@ class AppDatabase extends GeneratedDatabase {
       createdAt: row.read<int>('created_at'),
       schemaVersion: row.read<int>('schema_version'),
     );
+  }
+
+
+  Future<int> countHookEventsForRoot(String rootEventId) async {
+    final rows = await customSelect(
+      "SELECT COUNT(*) as count FROM events WHERE type = 'internalHook' AND payload_json LIKE ?",
+      variables: [Variable.withString('%"rootEventId":"$rootEventId"%')],
+    ).get();
+    if (rows.isEmpty) return 0;
+    return rows.first.read<int>('count');
   }
 
   Future<void> enqueue({required String queueId, required String eventId, required String sessionId}) async {

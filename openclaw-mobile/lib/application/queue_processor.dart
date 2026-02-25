@@ -5,13 +5,16 @@ import '../infrastructure/app_database.dart';
 import 'clock.dart';
 
 typedef EventRunner = Future<String> Function(Event event);
+typedef TurnHook = Future<void> Function(Event event, Session session, {bool? success});
 
 class QueueProcessor {
-  QueueProcessor(this._db, this._clock, {EventRunner? runner}) : _runner = runner;
+  QueueProcessor(this._db, this._clock, {EventRunner? runner, this.onTurnStart, this.onTurnEnd}) : _runner = runner;
 
   final AppDatabase _db;
   final Clock _clock;
   final EventRunner? _runner;
+  final TurnHook? onTurnStart;
+  final TurnHook? onTurnEnd;
   final _uuid = const Uuid();
 
   Future<void> tick() async {
@@ -27,6 +30,11 @@ class QueueProcessor {
         return;
       }
 
+      final session = await _db.getSessionById(event.sessionId);
+      if (session != null) {
+        await onTurnStart?.call(event, session);
+      }
+
       final output = await (_runner?.call(event) ?? _stubRun(event));
       await _db.insertRunResult(
         RunResult(
@@ -39,8 +47,17 @@ class QueueProcessor {
 
       await _applyHeartbeatSuppressionIfNeeded(event, output);
       await _db.markCompleted(next.id);
+
+      if (session != null) {
+        await onTurnEnd?.call(event, session, success: true);
+      }
     } catch (_) {
       await _db.markFailure(next.id, next.attemptCount + 1, next.maxAttempts);
+      final event = await _db.getEventById(next.eventId);
+      final session = event == null ? null : await _db.getSessionById(event.sessionId);
+      if (event != null && session != null) {
+        await onTurnEnd?.call(event, session, success: false);
+      }
     }
   }
 
@@ -65,6 +82,9 @@ class QueueProcessor {
     }
     if (event.type == EventType.heartbeat) {
       return 'HEARTBEAT_OK';
+    }
+    if (event.type == EventType.internalHook) {
+      return 'hook-processed:${event.payload['hookType']}';
     }
     return 'processed:${event.id}';
   }

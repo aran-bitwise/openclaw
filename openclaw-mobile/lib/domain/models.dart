@@ -1,4 +1,4 @@
-enum EventType { humanMessage, heartbeat, cron, hook, webhook }
+enum EventType { humanMessage, heartbeat, cron, internalHook, hook, webhook }
 
 enum QueueState { queued, processing, completed, failed, deadLetter }
 
@@ -6,9 +6,80 @@ enum MissedRunPolicy { skip, catchUp }
 
 enum CronScheduleType { daily, weekly, custom }
 
+enum HookType { startup, turnStart, turnEnd, reset, memoryFlush }
+
 abstract class VersionedEntity {
   int get schemaVersion;
   Map<String, dynamic> toJson();
+}
+
+class HookSettings {
+  HookSettings({
+    required this.enabled,
+    required this.enabledHooks,
+    required this.promptTemplates,
+    required this.allowedEmitHooks,
+    this.maxDepth = 4,
+    this.maxHookEventsPerRoot = 12,
+  });
+
+  final bool enabled;
+  final Map<String, bool> enabledHooks;
+  final Map<String, String> promptTemplates;
+  final List<String> allowedEmitHooks;
+  final int maxDepth;
+  final int maxHookEventsPerRoot;
+
+  factory HookSettings.defaults() => HookSettings(
+    enabled: true,
+    enabledHooks: {for (final t in HookType.values) t.name: true},
+    promptTemplates: {
+      HookType.startup.name: 'Startup hook executed.',
+      HookType.turnStart.name: 'Turn starting.',
+      HookType.turnEnd.name: 'Turn complete.',
+      HookType.reset.name: 'Session reset requested.',
+      HookType.memoryFlush.name: 'Memory flush requested.',
+    },
+    allowedEmitHooks: [HookType.turnStart.name, HookType.turnEnd.name, HookType.reset.name, HookType.memoryFlush.name],
+  );
+
+  factory HookSettings.fromJson(Map<String, dynamic> json) => HookSettings(
+    enabled: json['enabled'] as bool? ?? true,
+    enabledHooks: Map<String, bool>.from((json['enabledHooks'] as Map?) ?? {}),
+    promptTemplates: Map<String, String>.from((json['promptTemplates'] as Map?) ?? {}),
+    allowedEmitHooks: List<String>.from(json['allowedEmitHooks'] as List? ?? []),
+    maxDepth: json['maxDepth'] as int? ?? 4,
+    maxHookEventsPerRoot: json['maxHookEventsPerRoot'] as int? ?? 12,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'enabled': enabled,
+    'enabledHooks': enabledHooks,
+    'promptTemplates': promptTemplates,
+    'allowedEmitHooks': allowedEmitHooks,
+    'maxDepth': maxDepth,
+    'maxHookEventsPerRoot': maxHookEventsPerRoot,
+  };
+
+  bool isHookEnabled(HookType type) => enabled && (enabledHooks[type.name] ?? false);
+
+  HookSettings copyWith({
+    bool? enabled,
+    Map<String, bool>? enabledHooks,
+    Map<String, String>? promptTemplates,
+    List<String>? allowedEmitHooks,
+    int? maxDepth,
+    int? maxHookEventsPerRoot,
+  }) {
+    return HookSettings(
+      enabled: enabled ?? this.enabled,
+      enabledHooks: enabledHooks ?? this.enabledHooks,
+      promptTemplates: promptTemplates ?? this.promptTemplates,
+      allowedEmitHooks: allowedEmitHooks ?? this.allowedEmitHooks,
+      maxDepth: maxDepth ?? this.maxDepth,
+      maxHookEventsPerRoot: maxHookEventsPerRoot ?? this.maxHookEventsPerRoot,
+    );
+  }
 }
 
 class ActiveHoursWindow {
@@ -230,13 +301,16 @@ class AgentProfile implements VersionedEntity {
     required this.name,
     required this.createdAt,
     HeartbeatSettings? heartbeat,
-    this.schemaVersion = 2,
-  }) : heartbeat = heartbeat ?? HeartbeatSettings.disabled();
+    HookSettings? hooks,
+    this.schemaVersion = 3,
+  }) : heartbeat = heartbeat ?? HeartbeatSettings.disabled(),
+       hooks = hooks ?? HookSettings.defaults();
 
   final String id;
   final String name;
   final int createdAt;
   final HeartbeatSettings heartbeat;
+  final HookSettings hooks;
   @override
   final int schemaVersion;
 
@@ -247,6 +321,9 @@ class AgentProfile implements VersionedEntity {
     heartbeat: json['heartbeat'] is Map
         ? HeartbeatSettings.fromJson(Map<String, dynamic>.from(json['heartbeat'] as Map))
         : HeartbeatSettings.disabled(),
+    hooks: json['hooks'] is Map
+        ? HookSettings.fromJson(Map<String, dynamic>.from(json['hooks'] as Map))
+        : HookSettings.defaults(),
     schemaVersion: (json['schemaVersion'] as int?) ?? 1,
   );
 
@@ -256,15 +333,17 @@ class AgentProfile implements VersionedEntity {
     'name': name,
     'createdAt': createdAt,
     'heartbeat': heartbeat.toJson(),
+    'hooks': hooks.toJson(),
     'schemaVersion': schemaVersion,
   };
 
-  AgentProfile copyWith({String? name, HeartbeatSettings? heartbeat}) {
+  AgentProfile copyWith({String? name, HeartbeatSettings? heartbeat, HookSettings? hooks}) {
     return AgentProfile(
       id: id,
       name: name ?? this.name,
       createdAt: createdAt,
       heartbeat: heartbeat ?? this.heartbeat,
+      hooks: hooks ?? this.hooks,
       schemaVersion: schemaVersion,
     );
   }

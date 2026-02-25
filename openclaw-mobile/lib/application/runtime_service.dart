@@ -13,14 +13,16 @@ class RuntimeService {
   final Clock _clock;
   final _uuid = const Uuid();
 
-  Future<bool> ingestEnvelope(InboundEnvelope envelope) async {
+  Future<bool> ingestEnvelope(InboundEnvelope envelope, {int? createdAtMs}) async {
     final route = _router.resolve(envelope);
+    final createdAt = createdAtMs ?? _clock.now().millisecondsSinceEpoch;
+
     await _db.upsertSession(
       Session(
         id: route.sessionId,
         agentId: route.agentId,
         channelId: route.channelId,
-        createdAt: _clock.now().millisecondsSinceEpoch,
+        createdAt: createdAt,
       ),
     );
 
@@ -30,7 +32,7 @@ class RuntimeService {
       type: envelope.eventType,
       payload: envelope.payload,
       idempotencyKey: envelope.idempotencyKey,
-      createdAt: _clock.now().millisecondsSinceEpoch,
+      createdAt: createdAt,
     );
     final inserted = await _db.insertEvent(event);
     if (!inserted) return false;
@@ -81,7 +83,6 @@ class RuntimeService {
     );
   }
 
-
   Future<bool> sendCron({
     required String agentId,
     required String sessionId,
@@ -109,10 +110,50 @@ class RuntimeService {
     );
   }
 
+  Future<bool> sendInternalHook({
+    required String agentId,
+    required String sessionId,
+    required String channelId,
+    required HookType hookType,
+    required String rootEventId,
+    required String parentEventId,
+    required int depth,
+    required String orderKey,
+    required String prompt,
+    required String idempotencyKey,
+    int? createdAtMs,
+  }) {
+    return ingestEnvelope(
+      InboundEnvelope(
+        channelId: channelId,
+        agentId: agentId,
+        sessionId: sessionId,
+        eventType: EventType.internalHook,
+        idempotencyKey: idempotencyKey,
+        payload: {
+          'text': prompt,
+          'source': 'internalHook',
+          'hookType': hookType.name,
+          'rootEventId': rootEventId,
+          'parentEventId': parentEventId,
+          'depth': depth,
+          'orderKey': orderKey,
+        },
+      ),
+      createdAtMs: createdAtMs,
+    );
+  }
+
   Future<void> updateHeartbeatSettings(String agentId, HeartbeatSettings settings) async {
     final agent = await _db.getAgent(agentId);
     if (agent == null) return;
     await _db.upsertAgent(agent.copyWith(heartbeat: settings));
+  }
+
+  Future<void> updateHookSettings(String agentId, HookSettings settings) async {
+    final agent = await _db.getAgent(agentId);
+    if (agent == null) return;
+    await _db.upsertAgent(agent.copyWith(hooks: settings));
   }
 
   Future<bool> retryEvent(String eventId) => _db.retryEvent(eventId);

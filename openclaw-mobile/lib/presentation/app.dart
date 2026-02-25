@@ -45,6 +45,7 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
         AgentProfile(id: 'default-agent', name: 'Default Agent', createdAt: DateTime.now().millisecondsSinceEpoch),
       );
       ref.read(selectedAgentIdProvider.notifier).state = 'default-agent';
+      await ref.read(hookServiceProvider).emitStartupHookOnce(ref.read(clockProvider).now().millisecondsSinceEpoch.toString());
       await _runSchedulersTick();
       _refreshViews();
     });
@@ -81,7 +82,7 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('OpenClaw Chat (Milestone 7)'),
+        title: const Text('OpenClaw Chat (Milestone 8)'),
         actions: [
           IconButton(
             tooltip: 'Process now',
@@ -100,6 +101,30 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
             tooltip: 'Run cron check now',
             onPressed: _runSchedulersTick,
             icon: const Icon(Icons.schedule),
+          ),
+          IconButton(
+            tooltip: 'Reset hook',
+            onPressed: () async {
+              final sid = ref.read(selectedSessionIdProvider);
+              if (sid == null) return;
+              final session = await ref.read(databaseProvider).getSessionById(sid);
+              if (session == null) return;
+              await ref.read(hookServiceProvider).emitManualHook(session: session, type: HookType.reset);
+              _refreshViews();
+            },
+            icon: const Icon(Icons.restart_alt),
+          ),
+          IconButton(
+            tooltip: 'Memory flush hook',
+            onPressed: () async {
+              final sid = ref.read(selectedSessionIdProvider);
+              if (sid == null) return;
+              final session = await ref.read(databaseProvider).getSessionById(sid);
+              if (session == null) return;
+              await ref.read(hookServiceProvider).emitManualHook(session: session, type: HookType.memoryFlush);
+              _refreshViews();
+            },
+            icon: const Icon(Icons.cleaning_services),
           ),
         ],
       ),
@@ -204,13 +229,18 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(text),
+                                    if (item.event.type == EventType.internalHook)
+                                      Text(
+                                        'Triggered by ${item.event.payload['parentEventId'] ?? 'n/a'} (root ${item.event.payload['rootEventId'] ?? 'n/a'}, depth ${item.event.payload['depth'] ?? '?'})',
+                                        style: const TextStyle(fontSize: 11),
+                                      ),
                                     const SizedBox(height: 6),
                                     Wrap(
                                       spacing: 8,
                                       crossAxisAlignment: WrapCrossAlignment.center,
                                       children: [
                                         _stateChip(item.state),
-                                        Text(_sourceLabel(item.event.type)),
+                                        Text(_sourceLabel(item.event.type, item.event.payload)),
                                         if (item.state == QueueState.failed || item.state == QueueState.deadLetter)
                                           TextButton(
                                             onPressed: () async {
@@ -304,7 +334,7 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
     return Chip(label: Text(queueStateLabel(state)), backgroundColor: color.withOpacity(0.2));
   }
 
-  String _sourceLabel(EventType type) {
+  String _sourceLabel(EventType type, Map<String, dynamic> payload) {
     switch (type) {
       case EventType.humanMessage:
         return 'human';
@@ -312,6 +342,22 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
         return 'heartbeat';
       case EventType.cron:
         return 'cron';
+      case EventType.internalHook:
+        final hook = payload['hookType']?.toString() ?? 'internal';
+        switch (hook) {
+          case 'startup':
+            return 'Startup Hook';
+          case 'turnStart':
+            return 'Turn Start Hook';
+          case 'turnEnd':
+            return 'Turn End Hook';
+          case 'reset':
+            return 'Reset Hook';
+          case 'memoryFlush':
+            return 'Memory Flush Hook';
+          default:
+            return 'Internal Hook';
+        }
       default:
         return type.name;
     }

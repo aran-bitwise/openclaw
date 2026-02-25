@@ -116,3 +116,7 @@ Deviations:
 6. Verify `skip` emits one due event; verify `catchUp` emits up to cap.
 7. Kill app and relaunch; confirm schedules and next run state persist.
 8. Verify queued -> processing -> completed/failed chips for cron events in timeline.
+
+## Next milestone
+
+- Milestone 8 internal hooks implementation: /flutter-openclaw-mobile/m8-internal-hooks-implementation
