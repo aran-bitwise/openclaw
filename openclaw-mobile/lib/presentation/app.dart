@@ -260,6 +260,8 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
               ],
             ),
             const SizedBox(height: 8),
+            const _TimelineFilters(),
+            const SizedBox(height: 8),
             Expanded(
               child: Card(
                 child: Padding(
@@ -307,6 +309,10 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
                                             },
                                             child: const Text('Retry'),
                                           ),
+                                        TextButton(
+                                          onPressed: () => _openInspector(item.event.id),
+                                          child: const Text('Inspect'),
+                                        ),
                                       ],
                                     ),
                                     FutureBuilder<Map<String, List<MemoryEntry>>>(
@@ -403,6 +409,84 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
     _refreshViews();
   }
 
+  Future<void> _openInspector(String eventId) async {
+    final inspector = ref.read(inspectorServiceProvider);
+    final data = await inspector.inspectEvent(eventId);
+    if (!mounted || data == null) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Event inspector: ${data.event.id.substring(0, 8)}'),
+        content: SizedBox(
+          width: 760,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Source: ${data.sourceLabel}'),
+                Text('Agent: ${data.session.agentId}'),
+                Text('Session: ${data.session.id}'),
+                Text('Channel: ${data.session.channelId}'),
+                Text('Idempotency: ${data.event.idempotencyKey}'),
+                const SizedBox(height: 8),
+                const Text('Queue/Lifecycle', style: TextStyle(fontWeight: FontWeight.bold)),
+                Text('State: ${data.queueItem?.state.name ?? 'n/a'}'),
+                Text('Attempt count: ${data.queueItem?.attemptCount ?? 0} / ${data.queueItem?.maxAttempts ?? 0}'),
+                Text('Queued at: ${_fmtTs(data.queueItem?.createdAt)}'),
+                Text('Started at: ${_fmtTs(data.queueItem?.state == QueueState.processing ? data.queueItem?.updatedAt : null)}'),
+                Text('Completed at: ${_fmtTs(data.runResults.isNotEmpty ? data.runResults.last.completedAt : null)}'),
+                Text('Failed/Dead-letter at: ${_fmtTs((data.queueItem?.state == QueueState.failed || data.queueItem?.state == QueueState.deadLetter) ? data.queueItem?.updatedAt : null)}'),
+                Text('Next attempt: ${_fmtTs(data.queueItem?.nextAttemptAt)}'),
+                const SizedBox(height: 8),
+                const Text('Why did this happen?', style: TextStyle(fontWeight: FontWeight.bold)),
+                Text(data.explanation),
+                if (data.ancestryChain.isEmpty)
+                  const Text('No ancestry metadata recorded')
+                else
+                  Text(data.ancestryChain.map((e) => e.id.substring(0, 8)).join(' -> ')),
+                const SizedBox(height: 8),
+                const Text('Execution trace', style: TextStyle(fontWeight: FontWeight.bold)),
+                for (final step in data.traceSteps) Text('• $step'),
+                const SizedBox(height: 8),
+                const Text('Run results', style: TextStyle(fontWeight: FontWeight.bold)),
+                for (final run in data.runResults) Text('${_fmtTs(run.completedAt)}: ${run.output}'),
+                const SizedBox(height: 8),
+                const Text('Memory reads', style: TextStyle(fontWeight: FontWeight.bold)),
+                for (final m in data.memoryReads)
+                  Text('[${m.scope.name}] ${m.content} (source event ${m.sourceEventId ?? 'n/a'})'),
+                const SizedBox(height: 8),
+                const Text('Memory writes', style: TextStyle(fontWeight: FontWeight.bold)),
+                for (final m in data.memoryWrites)
+                  Text('[${m.scope.name}] ${m.content} (source run ${m.sourceRunId ?? 'n/a'})'),
+                const SizedBox(height: 8),
+                const Text('Tool policy decisions', style: TextStyle(fontWeight: FontWeight.bold)),
+                for (final t in data.toolAudits)
+                  Text('${t.toolId}: ${t.decisionAllowed ? 'allowed' : 'blocked'} (${t.decisionReason}), consent=${t.consentOutcome}, audit=${t.id.substring(0, 8)}'),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
+          FilledButton(
+            onPressed: () async {
+              final path = await inspector.exportDiagnosticsForEvent(eventId);
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Diagnostics exported to $path')));
+            },
+            child: const Text('Export diagnostics'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _fmtTs(int? millis) {
+    if (millis == null || millis <= 0) return 'n/a';
+    return DateTime.fromMillisecondsSinceEpoch(millis).toLocal().toIso8601String();
+  }
+
   Widget _stateChip(QueueState state) {
     Color color;
     switch (state) {
@@ -452,6 +536,74 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
       default:
         return type.name;
     }
+  }
+}
+
+class _TimelineFilters extends ConsumerWidget {
+  const _TimelineFilters();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final typeFilter = ref.watch(timelineEventTypeFilterProvider);
+    final stateFilter = ref.watch(timelineStateFilterProvider);
+    final traceFilter = ref.watch(timelineTraceFilterProvider);
+    final descending = ref.watch(timelineSortDescendingProvider);
+    final onlySession = ref.watch(timelineShowOnlySessionProvider);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            SizedBox(
+              width: 170,
+              child: DropdownButtonFormField<EventType?>(
+                value: typeFilter,
+                decoration: const InputDecoration(labelText: 'Type'),
+                items: [
+                  const DropdownMenuItem<EventType?>(value: null, child: Text('All')),
+                  ...EventType.values.map((e) => DropdownMenuItem<EventType?>(value: e, child: Text(e.name))),
+                ],
+                onChanged: (value) => ref.read(timelineEventTypeFilterProvider.notifier).state = value,
+              ),
+            ),
+            SizedBox(
+              width: 170,
+              child: DropdownButtonFormField<QueueState?>(
+                value: stateFilter,
+                decoration: const InputDecoration(labelText: 'Queue state'),
+                items: [
+                  const DropdownMenuItem<QueueState?>(value: null, child: Text('All')),
+                  ...QueueState.values.map((e) => DropdownMenuItem<QueueState?>(value: e, child: Text(e.name))),
+                ],
+                onChanged: (value) => ref.read(timelineStateFilterProvider.notifier).state = value,
+              ),
+            ),
+            SizedBox(
+              width: 190,
+              child: TextFormField(
+                initialValue: traceFilter,
+                decoration: const InputDecoration(labelText: 'Trace ID contains'),
+                onChanged: (value) => ref.read(timelineTraceFilterProvider.notifier).state = value,
+              ),
+            ),
+            FilterChip(
+              selected: descending,
+              label: const Text('Newest first'),
+              onSelected: (value) => ref.read(timelineSortDescendingProvider.notifier).state = value,
+            ),
+            FilterChip(
+              selected: onlySession,
+              label: const Text('Show only this session'),
+              onSelected: (value) => ref.read(timelineShowOnlySessionProvider.notifier).state = value,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

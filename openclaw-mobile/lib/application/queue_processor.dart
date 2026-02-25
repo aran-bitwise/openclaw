@@ -61,8 +61,7 @@ class QueueProcessor {
       final rawOutput = await (_runner?.call(event) ?? _stubRun(event));
       final output = toolExecution == null
           ? rawOutput
-          : '$rawOutput
-Tool ${toolExecution.invocation.toolId}: ${toolExecution.invocation.outcome} (${toolExecution.invocation.decisionReason})';
+          : '$rawOutput\nTool ${toolExecution.invocation.toolId}: ${toolExecution.invocation.outcome} (${toolExecution.invocation.decisionReason})';
       final runResult = RunResult(
         id: _uuid.v4(),
         eventId: next.eventId,

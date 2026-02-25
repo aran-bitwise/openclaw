@@ -359,6 +359,26 @@ class AppDatabase extends GeneratedDatabase {
     return _eventFromRow(rows.first);
   }
 
+  Future<List<TimelineItem>> listTimelineByAgent(String agentId) async {
+    final rows = await customSelect('''
+      SELECT e.*, q.state AS queue_state
+      FROM events e
+      LEFT JOIN queue_items q ON q.event_id = e.id
+      JOIN sessions s ON s.id = e.session_id
+      WHERE s.agent_id = ?
+      ORDER BY e.created_at DESC
+    ''', variables: [Variable.withString(agentId)]).get();
+
+    return rows
+        .map(
+          (row) => TimelineItem(
+            event: _eventFromRow(row),
+            state: QueueState.values.byName((row.read<String?>('queue_state') ?? 'queued')),
+          ),
+        )
+        .toList();
+  }
+
   Future<List<TimelineItem>> listTimelineBySession(String sessionId) async {
     final rows = await customSelect('''
       SELECT e.*, q.state AS queue_state
@@ -464,6 +484,15 @@ class AppDatabase extends GeneratedDatabase {
       [QueueState.queued.name, now, now, item.id],
     );
     return true;
+  }
+
+  Future<QueueItem?> getQueueItemByEventId(String eventId) async {
+    final rows = await customSelect(
+      'SELECT * FROM queue_items WHERE event_id = ? LIMIT 1',
+      variables: [Variable.withString(eventId)],
+    ).get();
+    if (rows.isEmpty) return null;
+    return _queueItemFromRow(rows.first);
   }
 
 
@@ -866,6 +895,34 @@ class AppDatabase extends GeneratedDatabase {
         record.createdAt,
       ],
     );
+  }
+
+  Future<List<ToolAuditRecord>> listToolAuditLogsForEvent(String eventId) async {
+    final rows = await customSelect(
+      'SELECT * FROM tool_audit_logs WHERE event_id = ? ORDER BY created_at ASC',
+      variables: [Variable.withString(eventId)],
+    ).get();
+    return rows
+        .map(
+          (row) => ToolAuditRecord(
+            id: row.read<String>('id'),
+            invocationId: row.read<String>('invocation_id'),
+            eventId: row.read<String>('event_id'),
+            agentId: row.read<String>('agent_id'),
+            sessionId: row.read<String>('session_id'),
+            handoffTraceId: row.read<String?>('handoff_trace_id'),
+            rootEventId: row.read<String?>('root_event_id'),
+            toolId: row.read<String>('tool_id'),
+            decisionAllowed: row.read<int>('decision_allowed') == 1,
+            decisionReason: row.read<String>('decision_reason'),
+            consentOutcome: row.read<String>('consent_outcome'),
+            outcome: row.read<String>('outcome'),
+            inputRedacted: row.read<String>('input_redacted'),
+            outputRedacted: row.read<String>('output_redacted'),
+            createdAt: row.read<int>('created_at'),
+          ),
+        )
+        .toList();
   }
 
   Future<List<ToolAuditRecord>> listToolAuditLogs({String? sessionId, int limit = 100}) async {

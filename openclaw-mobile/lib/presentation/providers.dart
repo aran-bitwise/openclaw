@@ -5,6 +5,7 @@ import '../application/cron_service.dart';
 import '../application/gateway_router.dart';
 import '../application/heartbeat_service.dart';
 import '../application/hook_service.dart';
+import '../application/inspector_service.dart';
 import '../application/handoff_service.dart';
 import '../application/memory_service.dart';
 import '../application/queue_processor.dart';
@@ -62,6 +63,11 @@ final toolingServiceProvider = Provider<ToolingService>((ref) {
   return ToolingService(ref.watch(databaseProvider), ref.watch(toolRegistryProvider), ref.watch(clockProvider));
 });
 
+
+final inspectorServiceProvider = Provider<InspectorService>((ref) {
+  return InspectorService(ref.watch(databaseProvider), ref.watch(clockProvider));
+});
+
 final memoryServiceProvider = Provider<MemoryService>((ref) {
   return MemoryService(ref.watch(databaseProvider), ref.watch(clockProvider));
 });
@@ -114,12 +120,47 @@ final sessionsByAgentProvider = FutureProvider<List<Session>>((ref) async {
   return db.listSessionsByAgent(agentId);
 });
 
-final timelineProvider = FutureProvider<List<TimelineItem>>((ref) async {
+final timelineEventTypeFilterProvider = StateProvider<EventType?>((_) => null);
+final timelineStateFilterProvider = StateProvider<QueueState?>((_) => null);
+final timelineTraceFilterProvider = StateProvider<String>((_) => '');
+final timelineSortDescendingProvider = StateProvider<bool>((_) => true);
+final timelineShowOnlySessionProvider = StateProvider<bool>((_) => true);
+
+final timelineRawProvider = FutureProvider<List<TimelineItem>>((ref) async {
   final db = ref.watch(databaseProvider);
   await db.init();
   final sessionId = ref.watch(selectedSessionIdProvider);
-  if (sessionId == null) return [];
-  return db.listTimelineBySession(sessionId);
+  final selectedAgent = ref.watch(selectedAgentIdProvider);
+  final onlySession = ref.watch(timelineShowOnlySessionProvider);
+  if (onlySession) {
+    if (sessionId == null) return [];
+    return db.listTimelineBySession(sessionId);
+  }
+  if (selectedAgent == null) return [];
+  return db.listTimelineByAgent(selectedAgent);
+});
+
+final timelineProvider = FutureProvider<List<TimelineItem>>((ref) async {
+  final items = await ref.watch(timelineRawProvider.future);
+  final typeFilter = ref.watch(timelineEventTypeFilterProvider);
+  final stateFilter = ref.watch(timelineStateFilterProvider);
+  final traceFilter = ref.watch(timelineTraceFilterProvider).trim();
+  final descending = ref.watch(timelineSortDescendingProvider);
+
+  var filtered = items.where((item) {
+    if (typeFilter != null && item.event.type != typeFilter) return false;
+    if (stateFilter != null && item.state != stateFilter) return false;
+    if (traceFilter.isNotEmpty) {
+      final trace = item.event.payload['handoffTraceId']?.toString() ?? '';
+      if (!trace.contains(traceFilter)) return false;
+    }
+    return true;
+  }).toList();
+
+  filtered.sort((a, b) => descending
+      ? b.event.createdAt.compareTo(a.event.createdAt)
+      : a.event.createdAt.compareTo(b.event.createdAt));
+  return filtered;
 });
 
 final queueViewProvider = FutureProvider<List<Map<String, Object?>>>((ref) async {
