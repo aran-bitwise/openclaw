@@ -4,6 +4,7 @@ import '../domain/models.dart';
 import '../infrastructure/app_database.dart';
 import 'clock.dart';
 import 'memory_service.dart';
+import 'tooling_service.dart';
 
 typedef EventRunner = Future<String> Function(Event event);
 typedef TurnHook = Future<void> Function(Event event, Session session, {bool? success});
@@ -18,6 +19,7 @@ class QueueProcessor {
     this.onTurnEnd,
     this.onAgentHandoffProcessed,
     this.memoryService,
+    this.toolingService,
   }) : _runner = runner;
 
   final AppDatabase _db;
@@ -27,6 +29,7 @@ class QueueProcessor {
   final TurnHook? onTurnEnd;
   final HandoffProcessedHook? onAgentHandoffProcessed;
   final MemoryService? memoryService;
+  final ToolingService? toolingService;
   final _uuid = const Uuid();
 
   Future<void> tick() async {
@@ -48,7 +51,18 @@ class QueueProcessor {
       }
 
       final memoryReads = session == null ? <MemoryEntry>[] : await (memoryService?.readForRun(session: session) ?? Future.value(<MemoryEntry>[]));
-      final output = await (_runner?.call(event) ?? _stubRun(event));
+      final toolExecution = (session == null || toolingService == null)
+          ? null
+          : await toolingService!.maybeInvokeFromEvent(
+              event,
+              session,
+              consentApproved: event.payload['toolConsentApproved'] == true,
+            );
+      final rawOutput = await (_runner?.call(event) ?? _stubRun(event));
+      final output = toolExecution == null
+          ? rawOutput
+          : '$rawOutput
+Tool ${toolExecution.invocation.toolId}: ${toolExecution.invocation.outcome} (${toolExecution.invocation.decisionReason})';
       final runResult = RunResult(
         id: _uuid.v4(),
         eventId: next.eventId,

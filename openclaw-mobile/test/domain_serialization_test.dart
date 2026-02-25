@@ -81,3 +81,33 @@ test('memory entry serialization supports scope and provenance', () {
   expect(roundTrip.sourceRunId, 'r1');
   expect(roundTrip.summaryOfEntryIds, contains('m2'));
 });
+
+
+test('tool invocation serialization preserves audit fields', () {
+  final invocation = ToolInvocation(
+    id: 't1',
+    eventId: 'e1',
+    agentId: 'a1',
+    sessionId: 's1',
+    toolId: 'tool.echo',
+    capabilityCategory: 'utility',
+    requiredPermissions: const ['tool.echo.execute'],
+    riskLevel: ToolRiskLevel.low,
+    inputSchema: const {'type': 'object'},
+    outputSchema: const {'type': 'object'},
+    idempotencyKey: 'k1',
+    inputRedacted: '{"message":"hi"}',
+    decisionAllowed: true,
+    decisionReason: 'permission granted',
+    consentOutcome: 'not_required',
+    outcome: 'success',
+    outputRedacted: '{"echo":"hi"}',
+    createdAt: 1,
+    updatedAt: 2,
+  );
+
+  final roundTrip = ToolInvocation.fromJson(invocation.toJson());
+  expect(roundTrip.toolId, 'tool.echo');
+  expect(roundTrip.decisionAllowed, isTrue);
+  expect(roundTrip.outcome, 'success');
+});

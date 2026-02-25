@@ -10,6 +10,8 @@ import '../application/memory_service.dart';
 import '../application/queue_processor.dart';
 import '../application/relay_ingest_service.dart';
 import '../application/runtime_service.dart';
+import '../application/tool_registry.dart';
+import '../application/tooling_service.dart';
 import '../domain/models.dart';
 import '../infrastructure/app_database.dart';
 import '../infrastructure/relay_client.dart';
@@ -49,7 +51,15 @@ final queueProcessorProvider = Provider<QueueProcessor>((ref) {
         .emitTurnEndForEvent(event, session, success: success ?? true),
     onAgentHandoffProcessed: (event, session) => ref.read(handoffServiceProvider).handleProcessedHandoff(event, session),
     memoryService: ref.read(memoryServiceProvider),
+    toolingService: ref.read(toolingServiceProvider),
   );
+});
+
+
+final toolRegistryProvider = Provider<ToolRegistry>((_) => DefaultToolRegistry());
+
+final toolingServiceProvider = Provider<ToolingService>((ref) {
+  return ToolingService(ref.watch(databaseProvider), ref.watch(toolRegistryProvider), ref.watch(clockProvider));
 });
 
 final memoryServiceProvider = Provider<MemoryService>((ref) {

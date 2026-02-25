@@ -16,7 +16,7 @@ class AppDatabase extends GeneratedDatabase {
   static QueryExecutor _openConnection() => driftDatabase(name: 'openclaw_mobile');
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   Future<void> init() async {
     await customStatement('''
@@ -150,6 +150,64 @@ class AppDatabase extends GeneratedDatabase {
         entry_id TEXT NOT NULL,
         created_at INTEGER NOT NULL,
         PRIMARY KEY(run_id, access_type, entry_id)
+      )
+    ''');
+
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS tool_permissions (
+        agent_id TEXT NOT NULL,
+        tool_id TEXT NOT NULL,
+        granted INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY(agent_id, tool_id)
+      )
+    ''');
+
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS tool_invocations (
+        id TEXT PRIMARY KEY,
+        event_id TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        tool_id TEXT NOT NULL,
+        capability_category TEXT NOT NULL,
+        required_permissions_json TEXT NOT NULL,
+        risk_level TEXT NOT NULL,
+        input_schema_json TEXT NOT NULL,
+        output_schema_json TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL,
+        input_redacted TEXT NOT NULL,
+        decision_allowed INTEGER NOT NULL,
+        decision_reason TEXT NOT NULL,
+        consent_outcome TEXT NOT NULL,
+        outcome TEXT NOT NULL,
+        output_redacted TEXT NOT NULL,
+        handoff_trace_id TEXT,
+        root_event_id TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        schema_version INTEGER NOT NULL,
+        UNIQUE(event_id, tool_id, idempotency_key)
+      )
+    ''');
+
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS tool_audit_logs (
+        id TEXT PRIMARY KEY,
+        invocation_id TEXT NOT NULL,
+        event_id TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        handoff_trace_id TEXT,
+        root_event_id TEXT,
+        tool_id TEXT NOT NULL,
+        decision_allowed INTEGER NOT NULL,
+        decision_reason TEXT NOT NULL,
+        consent_outcome TEXT NOT NULL,
+        outcome TEXT NOT NULL,
+        input_redacted TEXT NOT NULL,
+        output_redacted TEXT NOT NULL,
+        created_at INTEGER NOT NULL
       )
     ''');
   }
@@ -716,6 +774,153 @@ class AppDatabase extends GeneratedDatabase {
       createdAt: row.read<int>('created_at'),
       updatedAt: row.read<int>('updated_at'),
       lastAccessedAt: row.read<int>('last_accessed_at'),
+      schemaVersion: row.read<int>('schema_version'),
+    );
+  }
+
+  Future<void> setToolPermission({required String agentId, required String toolId, required bool granted}) async {
+    await customStatement(
+      'INSERT OR REPLACE INTO tool_permissions (agent_id,tool_id,granted,updated_at) VALUES (?,?,?,?)',
+      [agentId, toolId, granted ? 1 : 0, _nowMs()],
+    );
+  }
+
+  Future<bool> getToolPermission({required String agentId, required String toolId}) async {
+    final rows = await customSelect(
+      'SELECT granted FROM tool_permissions WHERE agent_id = ? AND tool_id = ? LIMIT 1',
+      variables: [Variable.withString(agentId), Variable.withString(toolId)],
+    ).get();
+    if (rows.isEmpty) return false;
+    return rows.first.read<int>('granted') == 1;
+  }
+
+  Future<Map<String, bool>> listToolPermissions(String agentId) async {
+    final rows = await customSelect(
+      'SELECT tool_id, granted FROM tool_permissions WHERE agent_id = ?',
+      variables: [Variable.withString(agentId)],
+    ).get();
+    return {for (final row in rows) row.read<String>('tool_id'): row.read<int>('granted') == 1};
+  }
+
+  Future<ToolInvocation?> findToolInvocation({
+    required String eventId,
+    required String toolId,
+    required String idempotencyKey,
+  }) async {
+    final rows = await customSelect(
+      'SELECT * FROM tool_invocations WHERE event_id = ? AND tool_id = ? AND idempotency_key = ? LIMIT 1',
+      variables: [Variable.withString(eventId), Variable.withString(toolId), Variable.withString(idempotencyKey)],
+    ).get();
+    if (rows.isEmpty) return null;
+    return _toolInvocationFromRow(rows.first);
+  }
+
+  Future<void> insertToolInvocation(ToolInvocation invocation) async {
+    await customStatement(
+      'INSERT OR REPLACE INTO tool_invocations (id,event_id,agent_id,session_id,tool_id,capability_category,required_permissions_json,risk_level,input_schema_json,output_schema_json,idempotency_key,input_redacted,decision_allowed,decision_reason,consent_outcome,outcome,output_redacted,handoff_trace_id,root_event_id,created_at,updated_at,schema_version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+      [
+        invocation.id,
+        invocation.eventId,
+        invocation.agentId,
+        invocation.sessionId,
+        invocation.toolId,
+        invocation.capabilityCategory,
+        jsonEncode(invocation.requiredPermissions),
+        invocation.riskLevel.name,
+        jsonEncode(invocation.inputSchema),
+        jsonEncode(invocation.outputSchema),
+        invocation.idempotencyKey,
+        invocation.inputRedacted,
+        invocation.decisionAllowed ? 1 : 0,
+        invocation.decisionReason,
+        invocation.consentOutcome,
+        invocation.outcome,
+        invocation.outputRedacted,
+        invocation.handoffTraceId,
+        invocation.rootEventId,
+        invocation.createdAt,
+        invocation.updatedAt,
+        invocation.schemaVersion,
+      ],
+    );
+  }
+
+  Future<void> insertToolAuditLog(ToolAuditRecord record) async {
+    await customStatement(
+      'INSERT OR REPLACE INTO tool_audit_logs (id,invocation_id,event_id,agent_id,session_id,handoff_trace_id,root_event_id,tool_id,decision_allowed,decision_reason,consent_outcome,outcome,input_redacted,output_redacted,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+      [
+        record.id,
+        record.invocationId,
+        record.eventId,
+        record.agentId,
+        record.sessionId,
+        record.handoffTraceId,
+        record.rootEventId,
+        record.toolId,
+        record.decisionAllowed ? 1 : 0,
+        record.decisionReason,
+        record.consentOutcome,
+        record.outcome,
+        record.inputRedacted,
+        record.outputRedacted,
+        record.createdAt,
+      ],
+    );
+  }
+
+  Future<List<ToolAuditRecord>> listToolAuditLogs({String? sessionId, int limit = 100}) async {
+    final rows = sessionId == null
+        ? await customSelect('SELECT * FROM tool_audit_logs ORDER BY created_at DESC LIMIT $limit').get()
+        : await customSelect(
+            'SELECT * FROM tool_audit_logs WHERE session_id = ? ORDER BY created_at DESC LIMIT $limit',
+            variables: [Variable.withString(sessionId)],
+          ).get();
+    return rows
+        .map(
+          (row) => ToolAuditRecord(
+            id: row.read<String>('id'),
+            invocationId: row.read<String>('invocation_id'),
+            eventId: row.read<String>('event_id'),
+            agentId: row.read<String>('agent_id'),
+            sessionId: row.read<String>('session_id'),
+            handoffTraceId: row.read<String?>('handoff_trace_id'),
+            rootEventId: row.read<String?>('root_event_id'),
+            toolId: row.read<String>('tool_id'),
+            decisionAllowed: row.read<int>('decision_allowed') == 1,
+            decisionReason: row.read<String>('decision_reason'),
+            consentOutcome: row.read<String>('consent_outcome'),
+            outcome: row.read<String>('outcome'),
+            inputRedacted: row.read<String>('input_redacted'),
+            outputRedacted: row.read<String>('output_redacted'),
+            createdAt: row.read<int>('created_at'),
+          ),
+        )
+        .toList();
+  }
+
+  ToolInvocation _toolInvocationFromRow(QueryRow row) {
+    return ToolInvocation(
+      id: row.read<String>('id'),
+      eventId: row.read<String>('event_id'),
+      agentId: row.read<String>('agent_id'),
+      sessionId: row.read<String>('session_id'),
+      toolId: row.read<String>('tool_id'),
+      capabilityCategory: row.read<String>('capability_category'),
+      requiredPermissions: List<String>.from(jsonDecode(row.read<String>('required_permissions_json')) as List),
+      riskLevel: ToolRiskLevel.values.byName(row.read<String>('risk_level')),
+      inputSchema: Map<String, dynamic>.from(jsonDecode(row.read<String>('input_schema_json')) as Map),
+      outputSchema: Map<String, dynamic>.from(jsonDecode(row.read<String>('output_schema_json')) as Map),
+      idempotencyKey: row.read<String>('idempotency_key'),
+      inputRedacted: row.read<String>('input_redacted'),
+      decisionAllowed: row.read<int>('decision_allowed') == 1,
+      decisionReason: row.read<String>('decision_reason'),
+      consentOutcome: row.read<String>('consent_outcome'),
+      outcome: row.read<String>('outcome'),
+      outputRedacted: row.read<String>('output_redacted'),
+      handoffTraceId: row.read<String?>('handoff_trace_id'),
+      rootEventId: row.read<String?>('root_event_id'),
+      createdAt: row.read<int>('created_at'),
+      updatedAt: row.read<int>('updated_at'),
       schemaVersion: row.read<int>('schema_version'),
     );
   }

@@ -610,32 +610,164 @@ enum MemoryScope { global, agent, session }
 
 enum MemoryEntryType { fact, summary }
 
+enum ToolRiskLevel { low, medium, high }
+
 class ToolInvocation implements VersionedEntity {
-  ToolInvocation({required this.id, required this.eventId, required this.toolName, required this.status, this.schemaVersion = 1});
+  ToolInvocation({
+    required this.id,
+    required this.eventId,
+    required this.agentId,
+    required this.sessionId,
+    required this.toolId,
+    required this.capabilityCategory,
+    required this.requiredPermissions,
+    required this.riskLevel,
+    required this.inputSchema,
+    required this.outputSchema,
+    required this.idempotencyKey,
+    required this.inputRedacted,
+    required this.decisionAllowed,
+    required this.decisionReason,
+    required this.consentOutcome,
+    required this.outcome,
+    required this.outputRedacted,
+    required this.createdAt,
+    required this.updatedAt,
+    this.handoffTraceId,
+    this.rootEventId,
+    this.schemaVersion = 2,
+  });
 
   final String id;
   final String eventId;
-  final String toolName;
-  final String status;
+  final String agentId;
+  final String sessionId;
+  final String toolId;
+  final String capabilityCategory;
+  final List<String> requiredPermissions;
+  final ToolRiskLevel riskLevel;
+  final Map<String, dynamic> inputSchema;
+  final Map<String, dynamic> outputSchema;
+  final String idempotencyKey;
+  final String inputRedacted;
+  final bool decisionAllowed;
+  final String decisionReason;
+  final String consentOutcome;
+  final String outcome;
+  final String outputRedacted;
+  final String? handoffTraceId;
+  final String? rootEventId;
+  final int createdAt;
+  final int updatedAt;
   @override
   final int schemaVersion;
 
   factory ToolInvocation.fromJson(Map<String, dynamic> json) => ToolInvocation(
     id: json['id'] as String,
     eventId: json['eventId'] as String,
-    toolName: json['toolName'] as String,
-    status: json['status'] as String,
-    schemaVersion: (json['schemaVersion'] as int?) ?? 1,
+    agentId: json['agentId'] as String? ?? 'unknown-agent',
+    sessionId: json['sessionId'] as String? ?? 'unknown-session',
+    toolId: json['toolId'] as String? ?? (json['toolName'] as String? ?? 'unknown-tool'),
+    capabilityCategory: json['capabilityCategory'] as String? ?? 'unknown',
+    requiredPermissions: List<String>.from(json['requiredPermissions'] as List? ?? const []),
+    riskLevel: ToolRiskLevel.values.byName(json['riskLevel'] as String? ?? 'low'),
+    inputSchema: Map<String, dynamic>.from((json['inputSchema'] as Map?) ?? const {}),
+    outputSchema: Map<String, dynamic>.from((json['outputSchema'] as Map?) ?? const {}),
+    idempotencyKey: json['idempotencyKey'] as String? ?? 'legacy',
+    inputRedacted: json['inputRedacted'] as String? ?? '',
+    decisionAllowed: json['decisionAllowed'] as bool? ?? ((json['status'] as String?) == 'allowed'),
+    decisionReason: json['decisionReason'] as String? ?? (json['status'] as String? ?? 'unknown'),
+    consentOutcome: json['consentOutcome'] as String? ?? 'not_required',
+    outcome: json['outcome'] as String? ?? (json['status'] as String? ?? 'unknown'),
+    outputRedacted: json['outputRedacted'] as String? ?? '',
+    handoffTraceId: json['handoffTraceId'] as String?,
+    rootEventId: json['rootEventId'] as String?,
+    createdAt: json['createdAt'] as int? ?? 0,
+    updatedAt: json['updatedAt'] as int? ?? 0,
+    schemaVersion: (json['schemaVersion'] as int?) ?? 2,
   );
 
   @override
   Map<String, dynamic> toJson() => {
     'id': id,
     'eventId': eventId,
-    'toolName': toolName,
-    'status': status,
+    'agentId': agentId,
+    'sessionId': sessionId,
+    'toolId': toolId,
+    'capabilityCategory': capabilityCategory,
+    'requiredPermissions': requiredPermissions,
+    'riskLevel': riskLevel.name,
+    'inputSchema': inputSchema,
+    'outputSchema': outputSchema,
+    'idempotencyKey': idempotencyKey,
+    'inputRedacted': inputRedacted,
+    'decisionAllowed': decisionAllowed,
+    'decisionReason': decisionReason,
+    'consentOutcome': consentOutcome,
+    'outcome': outcome,
+    'outputRedacted': outputRedacted,
+    'handoffTraceId': handoffTraceId,
+    'rootEventId': rootEventId,
+    'createdAt': createdAt,
+    'updatedAt': updatedAt,
     'schemaVersion': schemaVersion,
   };
+}
+
+class ToolRegistration {
+  const ToolRegistration({
+    required this.toolId,
+    required this.capabilityCategory,
+    required this.requiredPermissions,
+    required this.riskLevel,
+    required this.inputSchema,
+    required this.outputSchema,
+  });
+
+  final String toolId;
+  final String capabilityCategory;
+  final List<String> requiredPermissions;
+  final ToolRiskLevel riskLevel;
+  final Map<String, dynamic> inputSchema;
+  final Map<String, dynamic> outputSchema;
+}
+
+
+
+class ToolAuditRecord {
+  ToolAuditRecord({
+    required this.id,
+    required this.invocationId,
+    required this.eventId,
+    required this.agentId,
+    required this.sessionId,
+    required this.toolId,
+    required this.decisionAllowed,
+    required this.decisionReason,
+    required this.consentOutcome,
+    required this.outcome,
+    required this.inputRedacted,
+    required this.outputRedacted,
+    required this.createdAt,
+    this.handoffTraceId,
+    this.rootEventId,
+  });
+
+  final String id;
+  final String invocationId;
+  final String eventId;
+  final String agentId;
+  final String sessionId;
+  final String toolId;
+  final bool decisionAllowed;
+  final String decisionReason;
+  final String consentOutcome;
+  final String outcome;
+  final String inputRedacted;
+  final String outputRedacted;
+  final int createdAt;
+  final String? handoffTraceId;
+  final String? rootEventId;
 }
 
 class RunResult implements VersionedEntity {

@@ -219,6 +219,8 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
             const SizedBox(height: 8),
             _MemoryCard(agentId: selectedAgent, sessionId: selectedSession),
             const SizedBox(height: 8),
+            _ToolingCard(agentId: selectedAgent, sessionId: selectedSession),
+            const SizedBox(height: 8),
             Row(
               children: [
                 Expanded(
@@ -315,6 +317,21 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
                                         if (reads == 0 && writes == 0) return const SizedBox.shrink();
                                         return Text(
                                           'Memory reads: $reads • writes: $writes',
+                                          style: const TextStyle(fontSize: 11),
+                                        );
+                                      },
+                                    ),
+                                    FutureBuilder<List<ToolAuditRecord>>(
+                                      future: ref.read(databaseProvider).listToolAuditLogs(sessionId: item.event.sessionId, limit: 20),
+                                      builder: (context, snapshot) {
+                                        final match = snapshot.data
+                                                ?.where((a) => a.eventId == item.event.id)
+                                                .toList() ??
+                                            const <ToolAuditRecord>[];
+                                        if (match.isEmpty) return const SizedBox.shrink();
+                                        final latest = match.first;
+                                        return Text(
+                                          'Tool ${latest.toolId}: ${latest.decisionAllowed ? 'allowed' : 'blocked'} (${latest.decisionReason})',
                                           style: const TextStyle(fontSize: 11),
                                         );
                                       },
@@ -784,6 +801,165 @@ class _MemoryCard extends ConsumerWidget {
     );
     if (ok != true) return;
     await ref.read(databaseProvider).clearMemoryByScope(scope, scopeId: scopeId);
+    ref.invalidate(agentsProvider);
+  }
+}
+
+
+
+class _ToolingCard extends ConsumerWidget {
+  const _ToolingCard({required this.agentId, required this.sessionId});
+
+  final String? agentId;
+  final String? sessionId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tools = ref.read(toolRegistryProvider).listTools();
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Tools and capability sandbox', style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text(
+              'Default deny. Medium/high risk tools require runtime consent. openUrl remains blocked in mobile sandbox.',
+              style: TextStyle(fontSize: 12),
+            ),
+            for (final tool in tools)
+              FutureBuilder<bool>(
+                future: agentId == null
+                    ? Future.value(false)
+                    : ref.read(databaseProvider).getToolPermission(agentId: agentId!, toolId: tool.toolId),
+                builder: (context, snapshot) {
+                  final granted = snapshot.data ?? false;
+                  return ListTile(
+                    dense: true,
+                    title: Text('${tool.toolId} (${tool.riskLevel.name})'),
+                    subtitle: Text('${tool.capabilityCategory} • perms: ${tool.requiredPermissions.join(', ')}'),
+                    trailing: agentId == null
+                        ? const SizedBox.shrink()
+                        : Switch(
+                            value: granted,
+                            onChanged: (value) async {
+                              await ref.read(toolingServiceProvider).setPermission(
+                                    agentId: agentId!,
+                                    toolId: tool.toolId,
+                                    granted: value,
+                                  );
+                              ref.invalidate(agentsProvider);
+                            },
+                          ),
+                  );
+                },
+              ),
+            Row(
+              children: [
+                ElevatedButton(
+                  onPressed: (agentId == null || sessionId == null)
+                      ? null
+                      : () => _runToolDemo(
+                            context,
+                            ref,
+                            toolId: 'tool.echo',
+                            input: {'message': 'hello from tool.echo'},
+                            consentNeeded: false,
+                          ),
+                  child: const Text('Run echo tool'),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  onPressed: (agentId == null || sessionId == null)
+                      ? null
+                      : () => _runToolDemo(
+                            context,
+                            ref,
+                            toolId: 'tool.httpGet',
+                            input: {'url': 'https://example.com'},
+                            consentNeeded: true,
+                          ),
+                  child: const Text('Run httpGet tool'),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  onPressed: (agentId == null || sessionId == null)
+                      ? null
+                      : () => _runToolDemo(
+                            context,
+                            ref,
+                            toolId: 'tool.openUrl',
+                            input: {'url': 'https://example.com'},
+                            consentNeeded: true,
+                          ),
+                  child: const Text('Run openUrl tool'),
+                ),
+              ],
+            ),
+            FutureBuilder<List<ToolAuditRecord>>(
+              future: ref.read(databaseProvider).listToolAuditLogs(sessionId: sessionId, limit: 10),
+              builder: (context, snapshot) {
+                final logs = snapshot.data ?? [];
+                if (logs.isEmpty) return const SizedBox.shrink();
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 8),
+                    const Text('Recent tool audit logs', style: TextStyle(fontWeight: FontWeight.w600)),
+                    for (final log in logs.take(5))
+                      Text(
+                        '${log.toolId} • ${log.decisionAllowed ? 'allowed' : 'blocked'} • ${log.decisionReason} • consent=${log.consentOutcome}',
+                        style: const TextStyle(fontSize: 11),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _runToolDemo(
+    BuildContext context,
+    WidgetRef ref, {
+    required String toolId,
+    required Map<String, dynamic> input,
+    required bool consentNeeded,
+  }) async {
+    final agent = ref.read(selectedAgentIdProvider);
+    final session = ref.read(selectedSessionIdProvider);
+    if (agent == null || session == null) return;
+
+    var consentApproved = false;
+    if (consentNeeded) {
+      final decision = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Tool consent required'),
+          content: Text('Approve running $toolId?'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Deny')),
+            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Approve')),
+          ],
+        ),
+      );
+      consentApproved = decision == true;
+    }
+
+    await ref.read(runtimeProvider).sendHumanMessage(
+      agentId: agent,
+      sessionId: session,
+      channelId: 'mobile-chat',
+      text: 'Invoke $toolId',
+      extraPayload: {
+        'toolRequest': {'toolId': toolId, 'input': input, 'idempotencyKey': '$toolId-demo'},
+        'toolConsentApproved': consentApproved,
+      },
+    );
+    await ref.read(queueProcessorProvider).tick();
+    ref.invalidate(timelineProvider);
     ref.invalidate(agentsProvider);
   }
 }

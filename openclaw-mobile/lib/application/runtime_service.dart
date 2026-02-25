@@ -48,6 +48,7 @@ class RuntimeService {
     required String text,
     String? idempotencyKey,
     String phase = 'request',
+    Map<String, dynamic>? extraPayload,
   }) {
     return ingestEnvelope(
       InboundEnvelope(
@@ -56,7 +57,11 @@ class RuntimeService {
         sessionId: sessionId,
         eventType: EventType.humanMessage,
         idempotencyKey: idempotencyKey ?? 'msg-${_uuid.v4()}',
-        payload: {'text': text, 'source': 'human'},
+        payload: {
+          'text': text,
+          'source': 'human',
+          if (extraPayload != null) ...extraPayload,
+        },
       ),
     );
   }
