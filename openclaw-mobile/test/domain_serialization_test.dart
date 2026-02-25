@@ -46,3 +46,11 @@ void main() {
     expect(roundTrip.missedRunPolicy, MissedRunPolicy.catchUp);
   });
 }
+
+
+test('handoff settings serialization round-trip', () {
+  final settings = HandoffSettings.defaults().copyWith(allowedTargets: ['writer-agent']);
+  final roundTrip = HandoffSettings.fromJson(settings.toJson());
+  expect(roundTrip.allowedTargets, contains('writer-agent'));
+  expect(roundTrip.maxConcurrentChains, greaterThan(0));
+});

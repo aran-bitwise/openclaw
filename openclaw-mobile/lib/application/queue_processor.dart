@@ -6,15 +6,17 @@ import 'clock.dart';
 
 typedef EventRunner = Future<String> Function(Event event);
 typedef TurnHook = Future<void> Function(Event event, Session session, {bool? success});
+typedef HandoffProcessedHook = Future<void> Function(Event event, Session session);
 
 class QueueProcessor {
-  QueueProcessor(this._db, this._clock, {EventRunner? runner, this.onTurnStart, this.onTurnEnd}) : _runner = runner;
+  QueueProcessor(this._db, this._clock, {EventRunner? runner, this.onTurnStart, this.onTurnEnd, this.onAgentHandoffProcessed}) : _runner = runner;
 
   final AppDatabase _db;
   final Clock _clock;
   final EventRunner? _runner;
   final TurnHook? onTurnStart;
   final TurnHook? onTurnEnd;
+  final HandoffProcessedHook? onAgentHandoffProcessed;
   final _uuid = const Uuid();
 
   Future<void> tick() async {
@@ -50,6 +52,9 @@ class QueueProcessor {
 
       if (session != null) {
         await onTurnEnd?.call(event, session, success: true);
+        if (event.type == EventType.agentHandoff) {
+          await onAgentHandoffProcessed?.call(event, session);
+        }
       }
     } catch (_) {
       await _db.markFailure(next.id, next.attemptCount + 1, next.maxAttempts);

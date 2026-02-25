@@ -1,4 +1,4 @@
-enum EventType { humanMessage, heartbeat, cron, internalHook, hook, webhook }
+enum EventType { humanMessage, heartbeat, cron, internalHook, agentHandoff, hook, webhook }
 
 enum QueueState { queued, processing, completed, failed, deadLetter }
 
@@ -78,6 +78,57 @@ class HookSettings {
       allowedEmitHooks: allowedEmitHooks ?? this.allowedEmitHooks,
       maxDepth: maxDepth ?? this.maxDepth,
       maxHookEventsPerRoot: maxHookEventsPerRoot ?? this.maxHookEventsPerRoot,
+    );
+  }
+}
+
+
+class HandoffSettings {
+  HandoffSettings({
+    required this.enabled,
+    required this.allowedTargets,
+    this.requireApprovalForHighRisk = true,
+    this.maxDepth = 4,
+    this.maxConcurrentChains = 3,
+  });
+
+  final bool enabled;
+  final List<String> allowedTargets;
+  final bool requireApprovalForHighRisk;
+  final int maxDepth;
+  final int maxConcurrentChains;
+
+  factory HandoffSettings.defaults() => HandoffSettings(enabled: true, allowedTargets: []);
+
+  factory HandoffSettings.fromJson(Map<String, dynamic> json) => HandoffSettings(
+    enabled: json['enabled'] as bool? ?? true,
+    allowedTargets: List<String>.from(json['allowedTargets'] as List? ?? []),
+    requireApprovalForHighRisk: json['requireApprovalForHighRisk'] as bool? ?? true,
+    maxDepth: json['maxDepth'] as int? ?? 4,
+    maxConcurrentChains: json['maxConcurrentChains'] as int? ?? 3,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'enabled': enabled,
+    'allowedTargets': allowedTargets,
+    'requireApprovalForHighRisk': requireApprovalForHighRisk,
+    'maxDepth': maxDepth,
+    'maxConcurrentChains': maxConcurrentChains,
+  };
+
+  HandoffSettings copyWith({
+    bool? enabled,
+    List<String>? allowedTargets,
+    bool? requireApprovalForHighRisk,
+    int? maxDepth,
+    int? maxConcurrentChains,
+  }) {
+    return HandoffSettings(
+      enabled: enabled ?? this.enabled,
+      allowedTargets: allowedTargets ?? this.allowedTargets,
+      requireApprovalForHighRisk: requireApprovalForHighRisk ?? this.requireApprovalForHighRisk,
+      maxDepth: maxDepth ?? this.maxDepth,
+      maxConcurrentChains: maxConcurrentChains ?? this.maxConcurrentChains,
     );
   }
 }
@@ -302,15 +353,18 @@ class AgentProfile implements VersionedEntity {
     required this.createdAt,
     HeartbeatSettings? heartbeat,
     HookSettings? hooks,
-    this.schemaVersion = 3,
+    HandoffSettings? handoff,
+    this.schemaVersion = 4,
   }) : heartbeat = heartbeat ?? HeartbeatSettings.disabled(),
-       hooks = hooks ?? HookSettings.defaults();
+       hooks = hooks ?? HookSettings.defaults(),
+       handoff = handoff ?? HandoffSettings.defaults();
 
   final String id;
   final String name;
   final int createdAt;
   final HeartbeatSettings heartbeat;
   final HookSettings hooks;
+  final HandoffSettings handoff;
   @override
   final int schemaVersion;
 
@@ -324,6 +378,9 @@ class AgentProfile implements VersionedEntity {
     hooks: json['hooks'] is Map
         ? HookSettings.fromJson(Map<String, dynamic>.from(json['hooks'] as Map))
         : HookSettings.defaults(),
+    handoff: json['handoff'] is Map
+        ? HandoffSettings.fromJson(Map<String, dynamic>.from(json['handoff'] as Map))
+        : HandoffSettings.defaults(),
     schemaVersion: (json['schemaVersion'] as int?) ?? 1,
   );
 
@@ -334,16 +391,18 @@ class AgentProfile implements VersionedEntity {
     'createdAt': createdAt,
     'heartbeat': heartbeat.toJson(),
     'hooks': hooks.toJson(),
+    'handoff': handoff.toJson(),
     'schemaVersion': schemaVersion,
   };
 
-  AgentProfile copyWith({String? name, HeartbeatSettings? heartbeat, HookSettings? hooks}) {
+  AgentProfile copyWith({String? name, HeartbeatSettings? heartbeat, HookSettings? hooks, HandoffSettings? handoff}) {
     return AgentProfile(
       id: id,
       name: name ?? this.name,
       createdAt: createdAt,
       heartbeat: heartbeat ?? this.heartbeat,
       hooks: hooks ?? this.hooks,
+      handoff: handoff ?? this.handoff,
       schemaVersion: schemaVersion,
     );
   }

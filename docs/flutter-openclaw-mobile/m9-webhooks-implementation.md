@@ -120,3 +120,7 @@ Deviations/limitations:
 5. Verify webhook event appears in timeline with provider label and queue lifecycle chips.
 6. Re-send same delivery id and verify no duplicate execution in timeline.
 7. Send invalid signature and confirm relay returns 401.
+
+## Next milestone
+
+- Milestone 10 agent-to-agent messaging: /flutter-openclaw-mobile/m10-agent-to-agent-messaging

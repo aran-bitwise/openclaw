@@ -82,7 +82,7 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('OpenClaw Chat (Milestone 9)'),
+        title: const Text('OpenClaw Chat (Milestone 10)'),
         actions: [
           IconButton(
             tooltip: 'Process now',
@@ -109,6 +109,27 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
               _refreshViews();
             },
             icon: const Icon(Icons.sync),
+          ),
+          IconButton(
+            tooltip: 'Run Research -> Writer demo',
+            onPressed: () async {
+              final source = ref.read(selectedAgentIdProvider);
+              final sessionId = ref.read(selectedSessionIdProvider);
+              if (source == null || sessionId == null) return;
+              final agents = await ref.read(databaseProvider).listAgents();
+              final target = agents.where((a) => a.id != source).map((a) => a.id).firstOrNull;
+              if (target == null) return;
+              await ref.read(handoffServiceProvider).runDemoResearchToWriter(
+                sourceAgentId: source,
+                targetAgentId: target,
+                sessionId: sessionId,
+                channelId: 'mobile-chat',
+                message: 'Research and draft summary',
+              );
+              await ref.read(queueProcessorProvider).tick();
+              _refreshViews();
+            },
+            icon: const Icon(Icons.forward_to_inbox),
           ),
           IconButton(
             tooltip: 'Reset hook',
@@ -177,6 +198,8 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
             const SizedBox(height: 8),
             _CronSchedulesCard(agentId: selectedAgent, selectedSessionId: selectedSession),
             const SizedBox(height: 8),
+            _HandoffConfigCard(agentId: selectedAgent),
+            const SizedBox(height: 8),
             Row(
               children: [
                 Expanded(
@@ -242,6 +265,12 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
                                         'Triggered by ${item.event.payload['parentEventId'] ?? 'n/a'} (root ${item.event.payload['rootEventId'] ?? 'n/a'}, depth ${item.event.payload['depth'] ?? '?'})',
                                         style: const TextStyle(fontSize: 11),
                                       ),
+
+                                    if (item.event.type == EventType.agentHandoff)
+                                      Text(
+                                        'Trace ${item.event.payload['handoffTraceId'] ?? 'n/a'} • from ${item.event.payload['fromAgentId'] ?? '?'} to ${item.event.payload['toAgentId'] ?? '?'} • decision ${item.event.payload['decision']?['allowed'] == true ? 'allowed' : 'denied'}',
+                                        style: const TextStyle(fontSize: 11),
+                                      ),
                                     const SizedBox(height: 6),
                                     Wrap(
                                       spacing: 8,
@@ -289,7 +318,7 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
             ),
             const SizedBox(height: 8),
             const Text(
-              'Process now remains fallback when OS background execution is constrained. Heartbeat + cron + relay sync run best-effort via timer/resume/manual checks.',
+              'Process now remains fallback when OS background execution is constrained. Heartbeat + cron + relay sync + handoff orchestration run best-effort via timer/resume/manual checks.',
               style: TextStyle(fontSize: 12),
             ),
           ],
@@ -354,6 +383,8 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
       case EventType.webhook:
         final provider = payload['provider']?.toString() ?? 'webhook';
         return 'Webhook ($provider)';
+      case EventType.agentHandoff:
+        return payload['handoffReason']?.toString() == 'handoff_result' ? 'Handoff Result' : 'Agent Handoff';
       case EventType.internalHook:
         final hook = payload['hookType']?.toString() ?? 'internal';
         switch (hook) {
@@ -553,4 +584,9 @@ class _CronSchedulesCard extends ConsumerWidget {
     final minute = (value % 60).toString().padLeft(2, '0');
     return '$hour:$minute';
   }
+}
+
+
+extension _IterableFirstOrNull<T> on Iterable<T> {
+  T? get firstOrNull => isEmpty ? null : first;
 }

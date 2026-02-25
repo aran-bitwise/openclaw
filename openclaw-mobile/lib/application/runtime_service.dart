@@ -47,6 +47,7 @@ class RuntimeService {
     required String channelId,
     required String text,
     String? idempotencyKey,
+    String phase = 'request',
   }) {
     return ingestEnvelope(
       InboundEnvelope(
@@ -144,6 +145,49 @@ class RuntimeService {
     );
   }
 
+
+  Future<bool> sendAgentHandoff({
+    required String fromAgentId,
+    required String toAgentId,
+    required String sessionId,
+    required String channelId,
+    required String handoffReason,
+    required Map<String, dynamic> taskPayload,
+    required String handoffTraceId,
+    required Map<String, dynamic> decision,
+    required String rootEventId,
+    required String parentEventId,
+    required int depth,
+    required String orderKey,
+    String? idempotencyKey,
+    String phase = 'request',
+  }) {
+    return ingestEnvelope(
+      InboundEnvelope(
+        channelId: channelId,
+        agentId: toAgentId,
+        sessionId: sessionId,
+        eventType: EventType.agentHandoff,
+        idempotencyKey: idempotencyKey ?? 'handoff-${_uuid.v4()}',
+        payload: {
+          'text': 'Handoff: $handoffReason',
+          'source': 'agentHandoff',
+          'fromAgentId': fromAgentId,
+          'toAgentId': toAgentId,
+          'handoffReason': handoffReason,
+          'taskPayload': taskPayload,
+          'handoffTraceId': handoffTraceId,
+          'decision': decision,
+          'phase': phase,
+          'rootEventId': rootEventId,
+          'parentEventId': parentEventId,
+          'depth': depth,
+          'orderKey': orderKey,
+        },
+      ),
+    );
+  }
+
   Future<void> updateHeartbeatSettings(String agentId, HeartbeatSettings settings) async {
     final agent = await _db.getAgent(agentId);
     if (agent == null) return;
@@ -154,6 +198,12 @@ class RuntimeService {
     final agent = await _db.getAgent(agentId);
     if (agent == null) return;
     await _db.upsertAgent(agent.copyWith(hooks: settings));
+  }
+
+  Future<void> updateHandoffSettings(String agentId, HandoffSettings settings) async {
+    final agent = await _db.getAgent(agentId);
+    if (agent == null) return;
+    await _db.upsertAgent(agent.copyWith(handoff: settings));
   }
 
   Future<bool> retryEvent(String eventId) => _db.retryEvent(eventId);

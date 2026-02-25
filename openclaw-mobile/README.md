@@ -1,14 +1,14 @@
-# OpenClaw Mobile (Milestones 1-9)
+# OpenClaw Mobile (Milestones 1-10)
 
-This folder contains a standalone Flutter subproject implementing Milestones 1-9 for the OpenClaw
+This folder contains a standalone Flutter subproject implementing Milestones 1-10 for the OpenClaw
 mobile plan.
 
 ## Structure
 
-- `lib/domain`: entities and event/queue/schedule/hook types
-- `lib/application`: routing, heartbeat/cron/hook/relay ingest services, status mapping, and processing services
+- `lib/domain`: entities and event/queue/schedule/hook/handoff types
+- `lib/application`: routing, heartbeat/cron/hook/handoff/relay ingest services, status mapping, and processing services
 - `lib/infrastructure`: drift persistence, secure storage wrapper, relay client
-- `lib/presentation`: chat UI, scheduler controls, relay sync, and queue controls
+- `lib/presentation`: chat UI, scheduler controls, relay sync, handoff controls, and queue controls
 - `test`: unit and integration-oriented tests
 
 ## Notes
@@ -19,4 +19,5 @@ mobile plan.
 - Milestone 7 adds cron schedules (daily/weekly/custom interval subset) with missed-run policies (`skip` / `catchUp`).
 - Milestone 8 adds internal hooks (startup/turnStart/turnEnd/reset/memoryFlush) with ancestry and loop guards.
 - Milestone 9 adds relay-backed webhook ingestion (poll + ack) merged into the same queue/timeline pipeline.
+- Milestone 10 adds agent-to-agent handoffs with allowlist gating, trace metadata, and pause or resume controls.
 - `Process now` remains as fallback until native background workers are integrated.

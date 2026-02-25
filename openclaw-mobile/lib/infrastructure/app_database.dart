@@ -16,7 +16,7 @@ class AppDatabase extends GeneratedDatabase {
   static QueryExecutor _openConnection() => driftDatabase(name: 'openclaw_mobile');
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   Future<void> init() async {
     await customStatement('''
@@ -26,6 +26,7 @@ class AppDatabase extends GeneratedDatabase {
         created_at INTEGER NOT NULL,
         heartbeat_json TEXT,
         hook_json TEXT,
+        handoff_json TEXT,
         schema_version INTEGER NOT NULL
       )
     ''');
@@ -34,6 +35,9 @@ class AppDatabase extends GeneratedDatabase {
     }
     if (!await _hasColumn('agents', 'hook_json')) {
       await customStatement('ALTER TABLE agents ADD COLUMN hook_json TEXT');
+    }
+    if (!await _hasColumn('agents', 'handoff_json')) {
+      await customStatement('ALTER TABLE agents ADD COLUMN handoff_json TEXT');
     }
 
     await customStatement('''
@@ -81,6 +85,21 @@ class AppDatabase extends GeneratedDatabase {
     ''');
 
     await customStatement('''
+      CREATE TABLE IF NOT EXISTS handoff_traces (
+        trace_id TEXT PRIMARY KEY,
+        root_event_id TEXT NOT NULL,
+        source_agent_id TEXT NOT NULL,
+        current_agent_id TEXT NOT NULL,
+        paused INTEGER NOT NULL,
+        depth INTEGER NOT NULL,
+        visited_agents_json TEXT NOT NULL,
+        active INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    ''');
+
+    await customStatement('''
       CREATE TABLE IF NOT EXISTS cron_schedules (
         schedule_id TEXT PRIMARY KEY,
         agent_id TEXT NOT NULL,
@@ -105,13 +124,14 @@ class AppDatabase extends GeneratedDatabase {
 
   Future<void> upsertAgent(AgentProfile profile) async {
     await customStatement(
-      'INSERT OR REPLACE INTO agents (id,name,created_at,heartbeat_json,hook_json,schema_version) VALUES (?,?,?,?,?,?)',
+      'INSERT OR REPLACE INTO agents (id,name,created_at,heartbeat_json,hook_json,handoff_json,schema_version) VALUES (?,?,?,?,?,?,?)',
       [
         profile.id,
         profile.name,
         profile.createdAt,
         jsonEncode(profile.heartbeat.toJson()),
         jsonEncode(profile.hooks.toJson()),
+        jsonEncode(profile.handoff.toJson()),
         profile.schemaVersion,
       ],
     );
@@ -140,6 +160,10 @@ class AppDatabase extends GeneratedDatabase {
     final hooks = rawHooks == null
         ? HookSettings.defaults()
         : HookSettings.fromJson(Map<String, dynamic>.from(jsonDecode(rawHooks) as Map));
+    final rawHandoff = row.read<String?>('handoff_json');
+    final handoff = rawHandoff == null
+        ? HandoffSettings.defaults()
+        : HandoffSettings.fromJson(Map<String, dynamic>.from(jsonDecode(rawHandoff) as Map));
 
     return AgentProfile(
       id: row.read<String>('id'),
@@ -147,6 +171,7 @@ class AppDatabase extends GeneratedDatabase {
       createdAt: row.read<int>('created_at'),
       heartbeat: heartbeat,
       hooks: hooks,
+      handoff: handoff,
       schemaVersion: row.read<int>('schema_version'),
     );
   }
@@ -346,6 +371,67 @@ class AppDatabase extends GeneratedDatabase {
     return true;
   }
 
+
+
+  Future<void> upsertHandoffTrace({
+    required String traceId,
+    required String rootEventId,
+    required String sourceAgentId,
+    required String currentAgentId,
+    required bool paused,
+    required int depth,
+    required List<String> visitedAgents,
+    required bool active,
+  }) async {
+    final now = _nowMs();
+    final existing = await getHandoffTrace(traceId);
+    final createdAt = (existing?['created_at'] as int?) ?? now;
+    await customStatement(
+      'INSERT OR REPLACE INTO handoff_traces (trace_id,root_event_id,source_agent_id,current_agent_id,paused,depth,visited_agents_json,active,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
+      [
+        traceId,
+        rootEventId,
+        sourceAgentId,
+        currentAgentId,
+        paused ? 1 : 0,
+        depth,
+        jsonEncode(visitedAgents),
+        active ? 1 : 0,
+        createdAt,
+        now,
+      ],
+    );
+  }
+
+  Future<Map<String, dynamic>?> getHandoffTrace(String traceId) async {
+    final rows = await customSelect(
+      'SELECT * FROM handoff_traces WHERE trace_id = ? LIMIT 1',
+      variables: [Variable.withString(traceId)],
+    ).get();
+    if (rows.isEmpty) return null;
+    return rows.first.data;
+  }
+
+  Future<List<Map<String, dynamic>>> listHandoffTracesByAgent(String agentId) async {
+    final rows = await customSelect(
+      'SELECT * FROM handoff_traces WHERE source_agent_id = ? OR current_agent_id = ? ORDER BY updated_at DESC',
+      variables: [Variable.withString(agentId), Variable.withString(agentId)],
+    ).get();
+    return rows.map((r) => r.data).toList();
+  }
+
+  Future<int> countActiveHandoffTraces() async {
+    final rows = await customSelect('SELECT COUNT(*) as count FROM handoff_traces WHERE active = 1 AND paused = 0').get();
+    if (rows.isEmpty) return 0;
+    return rows.first.read<int>('count');
+  }
+
+  Future<void> setHandoffTracePaused(String traceId, bool paused) async {
+    await customStatement(
+      'UPDATE handoff_traces SET paused = ?, updated_at = ? WHERE trace_id = ?',
+      [paused ? 1 : 0, _nowMs(), traceId],
+    );
+  }
 
   Future<void> upsertCronSchedule(CronSchedule schedule) async {
     await customStatement(

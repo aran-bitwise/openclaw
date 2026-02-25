@@ -5,6 +5,7 @@ import '../application/cron_service.dart';
 import '../application/gateway_router.dart';
 import '../application/heartbeat_service.dart';
 import '../application/hook_service.dart';
+import '../application/handoff_service.dart';
 import '../application/queue_processor.dart';
 import '../application/relay_ingest_service.dart';
 import '../application/runtime_service.dart';
@@ -28,6 +29,11 @@ final runtimeProvider = Provider<RuntimeService>((ref) {
   return RuntimeService(ref.watch(databaseProvider), GatewayRouter(), ref.watch(clockProvider));
 });
 
+
+final handoffServiceProvider = Provider<HandoffService>((ref) {
+  return HandoffService(ref.watch(databaseProvider), ref.watch(runtimeProvider), ref.watch(clockProvider));
+});
+
 final hookServiceProvider = Provider<HookService>((ref) {
   return HookService(ref.watch(databaseProvider), ref.watch(runtimeProvider), ref.watch(clockProvider));
 });
@@ -40,6 +46,7 @@ final queueProcessorProvider = Provider<QueueProcessor>((ref) {
     onTurnEnd: (event, session, {success}) => ref
         .read(hookServiceProvider)
         .emitTurnEndForEvent(event, session, success: success ?? true),
+    onAgentHandoffProcessed: (event, session) => ref.read(handoffServiceProvider).handleProcessedHandoff(event, session),
   );
 });
 
