@@ -86,6 +86,9 @@ class QueueProcessor {
     if (event.type == EventType.internalHook) {
       return 'hook-processed:${event.payload['hookType']}';
     }
+    if (event.type == EventType.webhook) {
+      return 'webhook-processed:${event.payload['relayEventId'] ?? event.id}';
+    }
     return 'processed:${event.id}';
   }
 }

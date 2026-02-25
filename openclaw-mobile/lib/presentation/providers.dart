@@ -6,9 +6,14 @@ import '../application/gateway_router.dart';
 import '../application/heartbeat_service.dart';
 import '../application/hook_service.dart';
 import '../application/queue_processor.dart';
+import '../application/relay_ingest_service.dart';
 import '../application/runtime_service.dart';
 import '../domain/models.dart';
 import '../infrastructure/app_database.dart';
+import '../infrastructure/relay_client.dart';
+
+const _relayBaseUrl = String.fromEnvironment('OPENCLAW_RELAY_BASE_URL', defaultValue: 'http://127.0.0.1:8787');
+const _relayToken = String.fromEnvironment('OPENCLAW_RELAY_TOKEN', defaultValue: 'dev-mobile-token');
 
 final clockProvider = Provider<Clock>((_) => SystemClock());
 
@@ -35,6 +40,19 @@ final queueProcessorProvider = Provider<QueueProcessor>((ref) {
     onTurnEnd: (event, session, {success}) => ref
         .read(hookServiceProvider)
         .emitTurnEndForEvent(event, session, success: success ?? true),
+  );
+});
+
+final relayClientProvider = Provider<RelayClient>((_) {
+  return HttpRelayClient(baseUrl: _relayBaseUrl, bearerToken: _relayToken);
+});
+
+final relayIngestServiceProvider = Provider<RelayIngestService>((ref) {
+  return RelayIngestService(
+    ref.watch(relayClientProvider),
+    ref.watch(runtimeProvider),
+    ref.watch(queueProcessorProvider),
+    ref.watch(clockProvider),
   );
 });
 

@@ -82,7 +82,7 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('OpenClaw Chat (Milestone 8)'),
+        title: const Text('OpenClaw Chat (Milestone 9)'),
         actions: [
           IconButton(
             tooltip: 'Process now',
@@ -101,6 +101,14 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
             tooltip: 'Run cron check now',
             onPressed: _runSchedulersTick,
             icon: const Icon(Icons.schedule),
+          ),
+          IconButton(
+            tooltip: 'Sync relay now',
+            onPressed: () async {
+              await ref.read(relayIngestServiceProvider).syncPendingRelayEvents();
+              _refreshViews();
+            },
+            icon: const Icon(Icons.sync),
           ),
           IconButton(
             tooltip: 'Reset hook',
@@ -281,7 +289,7 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
             ),
             const SizedBox(height: 8),
             const Text(
-              'Process now remains fallback when OS background execution is constrained. Heartbeat + cron schedulers run best-effort via timer/resume/manual checks.',
+              'Process now remains fallback when OS background execution is constrained. Heartbeat + cron + relay sync run best-effort via timer/resume/manual checks.',
               style: TextStyle(fontSize: 12),
             ),
           ],
@@ -293,6 +301,7 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
   Future<void> _runSchedulersTick() async {
     await ref.read(heartbeatServiceProvider).triggerDueHeartbeats();
     await ref.read(cronServiceProvider).triggerDueSchedules();
+    await ref.read(relayIngestServiceProvider).syncPendingRelayEvents();
     _refreshViews();
   }
 
@@ -342,6 +351,9 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
         return 'heartbeat';
       case EventType.cron:
         return 'cron';
+      case EventType.webhook:
+        final provider = payload['provider']?.toString() ?? 'webhook';
+        return 'Webhook ($provider)';
       case EventType.internalHook:
         final hook = payload['hookType']?.toString() ?? 'internal';
         switch (hook) {
