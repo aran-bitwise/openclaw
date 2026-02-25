@@ -16,7 +16,7 @@ class AppDatabase extends GeneratedDatabase {
   static QueryExecutor _openConnection() => driftDatabase(name: 'openclaw_mobile');
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   Future<void> init() async {
     await customStatement('''
@@ -113,6 +113,43 @@ class AppDatabase extends GeneratedDatabase {
         last_run_at INTEGER,
         next_run_at INTEGER,
         schema_version INTEGER NOT NULL
+      )
+    ''');
+
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS memory_entries (
+        id TEXT PRIMARY KEY,
+        scope TEXT NOT NULL,
+        scope_id TEXT,
+        entry_type TEXT NOT NULL,
+        content TEXT NOT NULL,
+        source_event_id TEXT,
+        source_run_id TEXT,
+        source_agent_id TEXT,
+        source_session_id TEXT,
+        source_handoff_trace_id TEXT,
+        source_root_event_id TEXT,
+        importance INTEGER NOT NULL,
+        pinned INTEGER NOT NULL,
+        summary_of_ids_json TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        last_accessed_at INTEGER NOT NULL,
+        schema_version INTEGER NOT NULL
+      )
+    ''');
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_memory_scope ON memory_entries(scope, scope_id, pinned, importance, last_accessed_at)',
+    );
+
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS run_memory_accesses (
+        run_id TEXT NOT NULL,
+        event_id TEXT NOT NULL,
+        access_type TEXT NOT NULL,
+        entry_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY(run_id, access_type, entry_id)
       )
     ''');
   }
@@ -521,6 +558,166 @@ class AppDatabase extends GeneratedDatabase {
           ),
         )
         .toList();
+  }
+
+  Future<void> insertRunResultWithMemory({
+    required RunResult runResult,
+    required String eventId,
+    required List<MemoryEntry> readEntries,
+    required List<MemoryEntry> writeEntries,
+  }) async {
+    final now = _nowMs();
+    await transaction(() async {
+      await insertRunResult(runResult);
+      for (final entry in writeEntries) {
+        await upsertMemoryEntry(entry);
+      }
+      for (final entry in readEntries) {
+        await customStatement(
+          'INSERT OR REPLACE INTO run_memory_accesses (run_id,event_id,access_type,entry_id,created_at) VALUES (?,?,?,?,?)',
+          [runResult.id, eventId, 'read', entry.id, now],
+        );
+      }
+      for (final entry in writeEntries) {
+        await customStatement(
+          'INSERT OR REPLACE INTO run_memory_accesses (run_id,event_id,access_type,entry_id,created_at) VALUES (?,?,?,?,?)',
+          [runResult.id, eventId, 'write', entry.id, now],
+        );
+      }
+    });
+  }
+
+  Future<void> upsertMemoryEntry(MemoryEntry entry) async {
+    await customStatement(
+      'INSERT OR REPLACE INTO memory_entries (id,scope,scope_id,entry_type,content,source_event_id,source_run_id,source_agent_id,source_session_id,source_handoff_trace_id,source_root_event_id,importance,pinned,summary_of_ids_json,created_at,updated_at,last_accessed_at,schema_version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+      [
+        entry.id,
+        entry.scope.name,
+        entry.scopeId,
+        entry.entryType.name,
+        entry.content,
+        entry.sourceEventId,
+        entry.sourceRunId,
+        entry.sourceAgentId,
+        entry.sourceSessionId,
+        entry.sourceHandoffTraceId,
+        entry.sourceRootEventId,
+        entry.importance,
+        entry.pinned ? 1 : 0,
+        jsonEncode(entry.summaryOfEntryIds),
+        entry.createdAt,
+        entry.updatedAt,
+        entry.lastAccessedAt,
+        entry.schemaVersion,
+      ],
+    );
+  }
+
+  Future<List<MemoryEntry>> listMemoryByScope(MemoryScope scope, {String? scopeId}) async {
+    final rows = scopeId == null
+        ? await customSelect(
+            'SELECT * FROM memory_entries WHERE scope = ? ORDER BY pinned DESC, importance DESC, updated_at DESC',
+            variables: [Variable.withString(scope.name)],
+          ).get()
+        : await customSelect(
+            'SELECT * FROM memory_entries WHERE scope = ? AND scope_id = ? ORDER BY pinned DESC, importance DESC, updated_at DESC',
+            variables: [Variable.withString(scope.name), Variable.withString(scopeId)],
+          ).get();
+    return rows.map(_memoryFromRow).toList();
+  }
+
+  Future<List<MemoryEntry>> listMemoryForRetrieval({
+    required String agentId,
+    required String sessionId,
+    required int limit,
+    required int charBudget,
+  }) async {
+    final rows = await customSelect(
+      '''
+      SELECT * FROM memory_entries
+      WHERE (scope = 'global')
+         OR (scope = 'agent' AND scope_id = ?)
+         OR (scope = 'session' AND scope_id = ?)
+      ORDER BY pinned DESC, importance DESC, last_accessed_at DESC, updated_at DESC
+      ''',
+      variables: [Variable.withString(agentId), Variable.withString(sessionId)],
+    ).get();
+
+    final selected = <MemoryEntry>[];
+    var budget = 0;
+    for (final row in rows) {
+      if (selected.length >= limit) break;
+      final entry = _memoryFromRow(row);
+      budget += entry.content.length;
+      if (budget > charBudget) break;
+      selected.add(entry);
+    }
+    return selected;
+  }
+
+  Future<void> touchMemoryEntries(List<String> ids, int timestamp) async {
+    for (final id in ids) {
+      await customStatement('UPDATE memory_entries SET last_accessed_at = ?, updated_at = ? WHERE id = ?', [timestamp, timestamp, id]);
+    }
+  }
+
+  Future<void> updateMemoryEntry(MemoryEntry entry) => upsertMemoryEntry(entry);
+
+  Future<void> clearMemoryByScope(MemoryScope scope, {String? scopeId}) async {
+    if (scopeId == null) {
+      await customStatement('DELETE FROM memory_entries WHERE scope = ?', [scope.name]);
+      return;
+    }
+    await customStatement('DELETE FROM memory_entries WHERE scope = ? AND scope_id = ?', [scope.name, scopeId]);
+  }
+
+  Future<Map<String, List<MemoryEntry>>> listMemoryAccessByEvent(String eventId) async {
+    final rows = await customSelect(
+      '''
+      SELECT r.access_type AS access_type, m.*
+      FROM run_memory_accesses r
+      JOIN memory_entries m ON m.id = r.entry_id
+      WHERE r.event_id = ?
+      ORDER BY r.created_at ASC
+      ''',
+      variables: [Variable.withString(eventId)],
+    ).get();
+    final read = <MemoryEntry>[];
+    final write = <MemoryEntry>[];
+    for (final row in rows) {
+      final entry = _memoryFromRow(row);
+      if (row.read<String>('access_type') == 'read') {
+        read.add(entry);
+      } else {
+        write.add(entry);
+      }
+    }
+    return {'read': read, 'write': write};
+  }
+
+  MemoryEntry _memoryFromRow(QueryRow row) {
+    return MemoryEntry(
+      id: row.read<String>('id'),
+      scope: MemoryScope.values.byName(row.read<String>('scope')),
+      scopeId: row.read<String?>('scope_id'),
+      entryType: MemoryEntryType.values.byName(row.read<String>('entry_type')),
+      content: row.read<String>('content'),
+      sourceEventId: row.read<String?>('source_event_id'),
+      sourceRunId: row.read<String?>('source_run_id'),
+      sourceAgentId: row.read<String?>('source_agent_id'),
+      sourceSessionId: row.read<String?>('source_session_id'),
+      sourceHandoffTraceId: row.read<String?>('source_handoff_trace_id'),
+      sourceRootEventId: row.read<String?>('source_root_event_id'),
+      importance: row.read<int>('importance'),
+      pinned: row.read<int>('pinned') == 1,
+      summaryOfEntryIds: List<String>.from(
+        jsonDecode(row.read<String?>('summary_of_ids_json') ?? '[]') as List,
+      ),
+      createdAt: row.read<int>('created_at'),
+      updatedAt: row.read<int>('updated_at'),
+      lastAccessedAt: row.read<int>('last_accessed_at'),
+      schemaVersion: row.read<int>('schema_version'),
+    );
   }
 
   Future<List<Map<String, Object?>>> listQueueItems() async {

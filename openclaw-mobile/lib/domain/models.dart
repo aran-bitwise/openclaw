@@ -483,32 +483,132 @@ class Event implements VersionedEntity {
 }
 
 class MemoryEntry implements VersionedEntity {
-  MemoryEntry({required this.id, required this.sessionId, required this.content, required this.createdAt, this.schemaVersion = 1});
+  MemoryEntry({
+    required this.id,
+    required this.scope,
+    required this.content,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.lastAccessedAt,
+    this.scopeId,
+    this.entryType = MemoryEntryType.fact,
+    this.sourceEventId,
+    this.sourceRunId,
+    this.sourceAgentId,
+    this.sourceSessionId,
+    this.sourceHandoffTraceId,
+    this.sourceRootEventId,
+    this.importance = 1,
+    this.pinned = false,
+    this.summaryOfEntryIds = const [],
+    this.schemaVersion = 2,
+  });
 
   final String id;
-  final String sessionId;
+  final MemoryScope scope;
+  final String? scopeId;
+  final MemoryEntryType entryType;
   final String content;
+  final String? sourceEventId;
+  final String? sourceRunId;
+  final String? sourceAgentId;
+  final String? sourceSessionId;
+  final String? sourceHandoffTraceId;
+  final String? sourceRootEventId;
+  final int importance;
+  final bool pinned;
+  final List<String> summaryOfEntryIds;
   final int createdAt;
+  final int updatedAt;
+  final int lastAccessedAt;
   @override
   final int schemaVersion;
 
-  factory MemoryEntry.fromJson(Map<String, dynamic> json) => MemoryEntry(
-    id: json['id'] as String,
-    sessionId: json['sessionId'] as String,
-    content: json['content'] as String,
-    createdAt: json['createdAt'] as int,
-    schemaVersion: (json['schemaVersion'] as int?) ?? 1,
-  );
+  factory MemoryEntry.fromJson(Map<String, dynamic> json) {
+    final createdAt = json['createdAt'] as int;
+    final legacySessionId = json['sessionId'] as String?;
+    return MemoryEntry(
+      id: json['id'] as String,
+      scope: json['scope'] is String
+          ? MemoryScope.values.byName(json['scope'] as String)
+          : (legacySessionId == null ? MemoryScope.global : MemoryScope.session),
+      scopeId: json['scopeId'] as String? ?? legacySessionId,
+      entryType: json['entryType'] is String
+          ? MemoryEntryType.values.byName(json['entryType'] as String)
+          : MemoryEntryType.fact,
+      content: json['content'] as String,
+      sourceEventId: json['sourceEventId'] as String?,
+      sourceRunId: json['sourceRunId'] as String?,
+      sourceAgentId: json['sourceAgentId'] as String?,
+      sourceSessionId: json['sourceSessionId'] as String? ?? legacySessionId,
+      sourceHandoffTraceId: json['sourceHandoffTraceId'] as String?,
+      sourceRootEventId: json['sourceRootEventId'] as String?,
+      importance: json['importance'] as int? ?? 1,
+      pinned: json['pinned'] as bool? ?? false,
+      summaryOfEntryIds: List<String>.from(json['summaryOfEntryIds'] as List? ?? const []),
+      createdAt: createdAt,
+      updatedAt: json['updatedAt'] as int? ?? createdAt,
+      lastAccessedAt: json['lastAccessedAt'] as int? ?? createdAt,
+      schemaVersion: (json['schemaVersion'] as int?) ?? 2,
+    );
+  }
 
   @override
   Map<String, dynamic> toJson() => {
     'id': id,
-    'sessionId': sessionId,
+    'scope': scope.name,
+    'scopeId': scopeId,
+    'entryType': entryType.name,
     'content': content,
+    'sourceEventId': sourceEventId,
+    'sourceRunId': sourceRunId,
+    'sourceAgentId': sourceAgentId,
+    'sourceSessionId': sourceSessionId,
+    'sourceHandoffTraceId': sourceHandoffTraceId,
+    'sourceRootEventId': sourceRootEventId,
+    'importance': importance,
+    'pinned': pinned,
+    'summaryOfEntryIds': summaryOfEntryIds,
     'createdAt': createdAt,
+    'updatedAt': updatedAt,
+    'lastAccessedAt': lastAccessedAt,
     'schemaVersion': schemaVersion,
   };
+
+  MemoryEntry copyWith({
+    String? scopeId,
+    String? content,
+    int? updatedAt,
+    int? lastAccessedAt,
+    int? importance,
+    bool? pinned,
+  }) {
+    return MemoryEntry(
+      id: id,
+      scope: scope,
+      scopeId: scopeId ?? this.scopeId,
+      entryType: entryType,
+      content: content ?? this.content,
+      sourceEventId: sourceEventId,
+      sourceRunId: sourceRunId,
+      sourceAgentId: sourceAgentId,
+      sourceSessionId: sourceSessionId,
+      sourceHandoffTraceId: sourceHandoffTraceId,
+      sourceRootEventId: sourceRootEventId,
+      importance: importance ?? this.importance,
+      pinned: pinned ?? this.pinned,
+      summaryOfEntryIds: summaryOfEntryIds,
+      createdAt: createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      lastAccessedAt: lastAccessedAt ?? this.lastAccessedAt,
+      schemaVersion: schemaVersion,
+    );
+  }
 }
+
+enum MemoryScope { global, agent, session }
+
+enum MemoryEntryType { fact, summary }
 
 class ToolInvocation implements VersionedEntity {
   ToolInvocation({required this.id, required this.eventId, required this.toolName, required this.status, this.schemaVersion = 1});

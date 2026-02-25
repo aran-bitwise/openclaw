@@ -6,6 +6,7 @@ import '../application/gateway_router.dart';
 import '../application/heartbeat_service.dart';
 import '../application/hook_service.dart';
 import '../application/handoff_service.dart';
+import '../application/memory_service.dart';
 import '../application/queue_processor.dart';
 import '../application/relay_ingest_service.dart';
 import '../application/runtime_service.dart';
@@ -47,7 +48,12 @@ final queueProcessorProvider = Provider<QueueProcessor>((ref) {
         .read(hookServiceProvider)
         .emitTurnEndForEvent(event, session, success: success ?? true),
     onAgentHandoffProcessed: (event, session) => ref.read(handoffServiceProvider).handleProcessedHandoff(event, session),
+    memoryService: ref.read(memoryServiceProvider),
   );
+});
+
+final memoryServiceProvider = Provider<MemoryService>((ref) {
+  return MemoryService(ref.watch(databaseProvider), ref.watch(clockProvider));
 });
 
 final relayClientProvider = Provider<RelayClient>((_) {

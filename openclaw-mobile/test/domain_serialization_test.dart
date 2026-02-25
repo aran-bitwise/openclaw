@@ -54,3 +54,30 @@ test('handoff settings serialization round-trip', () {
   expect(roundTrip.allowedTargets, contains('writer-agent'));
   expect(roundTrip.maxConcurrentChains, greaterThan(0));
 });
+
+test('memory entry serialization supports scope and provenance', () {
+  final entry = MemoryEntry(
+    id: 'm1',
+    scope: MemoryScope.session,
+    scopeId: 's1',
+    entryType: MemoryEntryType.summary,
+    content: 'Summary',
+    sourceEventId: 'e1',
+    sourceRunId: 'r1',
+    sourceAgentId: 'a1',
+    sourceSessionId: 's1',
+    sourceHandoffTraceId: 'trace-1',
+    sourceRootEventId: 'root-1',
+    importance: 3,
+    pinned: true,
+    summaryOfEntryIds: const ['m0', 'm2'],
+    createdAt: 1,
+    updatedAt: 2,
+    lastAccessedAt: 3,
+  );
+
+  final roundTrip = MemoryEntry.fromJson(entry.toJson());
+  expect(roundTrip.scope, MemoryScope.session);
+  expect(roundTrip.sourceRunId, 'r1');
+  expect(roundTrip.summaryOfEntryIds, contains('m2'));
+});

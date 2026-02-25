@@ -82,7 +82,7 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('OpenClaw Chat (Milestone 10)'),
+        title: const Text('OpenClaw Chat (Milestone 11)'),
         actions: [
           IconButton(
             tooltip: 'Process now',
@@ -109,6 +109,23 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
               _refreshViews();
             },
             icon: const Icon(Icons.sync),
+          ),
+          IconButton(
+            tooltip: 'Compact memory now',
+            onPressed: () async {
+              final selectedAgent = ref.read(selectedAgentIdProvider);
+              final selectedSession = ref.read(selectedSessionIdProvider);
+              final memory = ref.read(memoryServiceProvider);
+              await memory.compactGlobalMemory();
+              if (selectedAgent != null) {
+                await memory.compactAgentMemory(selectedAgent);
+              }
+              if (selectedSession != null) {
+                await memory.compactSessionMemory(selectedSession);
+              }
+              _refreshViews();
+            },
+            icon: const Icon(Icons.compress),
           ),
           IconButton(
             tooltip: 'Run Research -> Writer demo',
@@ -200,6 +217,8 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
             const SizedBox(height: 8),
             _HandoffConfigCard(agentId: selectedAgent),
             const SizedBox(height: 8),
+            _MemoryCard(agentId: selectedAgent, sessionId: selectedSession),
+            const SizedBox(height: 8),
             Row(
               children: [
                 Expanded(
@@ -287,6 +306,18 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
                                             child: const Text('Retry'),
                                           ),
                                       ],
+                                    ),
+                                    FutureBuilder<Map<String, List<MemoryEntry>>>(
+                                      future: ref.read(databaseProvider).listMemoryAccessByEvent(item.event.id),
+                                      builder: (context, snapshot) {
+                                        final reads = snapshot.data?['read']?.length ?? 0;
+                                        final writes = snapshot.data?['write']?.length ?? 0;
+                                        if (reads == 0 && writes == 0) return const SizedBox.shrink();
+                                        return Text(
+                                          'Memory reads: $reads • writes: $writes',
+                                          style: const TextStyle(fontSize: 11),
+                                        );
+                                      },
                                     ),
                                   ],
                                 ),
@@ -583,6 +614,177 @@ class _CronSchedulesCard extends ConsumerWidget {
     final hour = (value ~/ 60).toString().padLeft(2, '0');
     final minute = (value % 60).toString().padLeft(2, '0');
     return '$hour:$minute';
+  }
+}
+
+class _MemoryCard extends ConsumerWidget {
+  const _MemoryCard({required this.agentId, required this.sessionId});
+
+  final String? agentId;
+  final String? sessionId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Memory', style: TextStyle(fontWeight: FontWeight.bold)),
+            _scopeSection(
+              context,
+              ref,
+              title: 'Global preferences',
+              scope: MemoryScope.global,
+              scopeId: null,
+            ),
+            if (agentId != null)
+              _scopeSection(
+                context,
+                ref,
+                title: 'Agent memory',
+                scope: MemoryScope.agent,
+                scopeId: agentId,
+              ),
+            if (sessionId != null)
+              _scopeSection(
+                context,
+                ref,
+                title: 'Session memory',
+                scope: MemoryScope.session,
+                scopeId: sessionId,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _scopeSection(
+    BuildContext context,
+    WidgetRef ref, {
+    required String title,
+    required MemoryScope scope,
+    required String? scopeId,
+  }) {
+    return FutureBuilder<List<MemoryEntry>>(
+      future: ref.read(databaseProvider).listMemoryByScope(scope, scopeId: scopeId),
+      builder: (context, snapshot) {
+        final entries = snapshot.data ?? [];
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+                const Spacer(),
+                IconButton(
+                  tooltip: 'Add memory',
+                  onPressed: () => _editEntry(context, ref, scope: scope, scopeId: scopeId),
+                  icon: const Icon(Icons.add),
+                ),
+                IconButton(
+                  tooltip: 'Clear scope',
+                  onPressed: () => _confirmClear(context, ref, scope: scope, scopeId: scopeId),
+                  icon: const Icon(Icons.delete_sweep),
+                ),
+              ],
+            ),
+            for (final entry in entries.take(4))
+              ListTile(
+                dense: true,
+                title: Text(entry.content, maxLines: 2, overflow: TextOverflow.ellipsis),
+                subtitle: Text(
+                  'src event=${entry.sourceEventId ?? 'n/a'} run=${entry.sourceRunId ?? 'n/a'} trace=${entry.sourceHandoffTraceId ?? 'n/a'}',
+                ),
+                trailing: Wrap(
+                  spacing: 4,
+                  children: [
+                    IconButton(
+                      tooltip: entry.pinned ? 'Unpin' : 'Pin',
+                      onPressed: () async {
+                        final now = ref.read(clockProvider).now().millisecondsSinceEpoch;
+                        await ref
+                            .read(databaseProvider)
+                            .updateMemoryEntry(entry.copyWith(pinned: !entry.pinned, updatedAt: now));
+                        ref.invalidate(agentsProvider);
+                      },
+                      icon: Icon(entry.pinned ? Icons.push_pin : Icons.push_pin_outlined),
+                    ),
+                    IconButton(
+                      tooltip: 'Edit',
+                      onPressed: () => _editEntry(context, ref, existing: entry, scope: scope, scopeId: scopeId),
+                      icon: const Icon(Icons.edit),
+                    ),
+                  ],
+                ),
+              ),
+            if (entries.isEmpty) const Text('No memory entries.'),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _editEntry(
+    BuildContext context,
+    WidgetRef ref, {
+    MemoryEntry? existing,
+    required MemoryScope scope,
+    required String? scopeId,
+  }) async {
+    final controller = TextEditingController(text: existing?.content ?? '');
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(existing == null ? 'Add memory' : 'Edit memory'),
+        content: TextField(controller: controller, maxLines: 4),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Save')),
+        ],
+      ),
+    );
+    if (saved != true || controller.text.trim().isEmpty) return;
+    final now = ref.read(clockProvider).now().millisecondsSinceEpoch;
+    final db = ref.read(databaseProvider);
+    await db.upsertMemoryEntry(
+      existing?.copyWith(content: controller.text.trim(), updatedAt: now, lastAccessedAt: now) ??
+          MemoryEntry(
+            id: const Uuid().v4(),
+            scope: scope,
+            scopeId: scopeId,
+            content: controller.text.trim(),
+            createdAt: now,
+            updatedAt: now,
+            lastAccessedAt: now,
+            importance: 2,
+          ),
+    );
+    ref.invalidate(agentsProvider);
+  }
+
+  Future<void> _confirmClear(
+    BuildContext context,
+    WidgetRef ref, {
+    required MemoryScope scope,
+    required String? scopeId,
+  }) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Clear memory scope?'),
+        content: const Text('This removes memory entries in this scope.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Clear')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await ref.read(databaseProvider).clearMemoryByScope(scope, scopeId: scopeId);
+    ref.invalidate(agentsProvider);
   }
 }
 

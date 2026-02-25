@@ -3,13 +3,22 @@ import 'package:uuid/uuid.dart';
 import '../domain/models.dart';
 import '../infrastructure/app_database.dart';
 import 'clock.dart';
+import 'memory_service.dart';
 
 typedef EventRunner = Future<String> Function(Event event);
 typedef TurnHook = Future<void> Function(Event event, Session session, {bool? success});
 typedef HandoffProcessedHook = Future<void> Function(Event event, Session session);
 
 class QueueProcessor {
-  QueueProcessor(this._db, this._clock, {EventRunner? runner, this.onTurnStart, this.onTurnEnd, this.onAgentHandoffProcessed}) : _runner = runner;
+  QueueProcessor(
+    this._db,
+    this._clock, {
+    EventRunner? runner,
+    this.onTurnStart,
+    this.onTurnEnd,
+    this.onAgentHandoffProcessed,
+    this.memoryService,
+  }) : _runner = runner;
 
   final AppDatabase _db;
   final Clock _clock;
@@ -17,6 +26,7 @@ class QueueProcessor {
   final TurnHook? onTurnStart;
   final TurnHook? onTurnEnd;
   final HandoffProcessedHook? onAgentHandoffProcessed;
+  final MemoryService? memoryService;
   final _uuid = const Uuid();
 
   Future<void> tick() async {
@@ -37,15 +47,37 @@ class QueueProcessor {
         await onTurnStart?.call(event, session);
       }
 
+      final memoryReads = session == null ? <MemoryEntry>[] : await (memoryService?.readForRun(session: session) ?? Future.value(<MemoryEntry>[]));
       final output = await (_runner?.call(event) ?? _stubRun(event));
-      await _db.insertRunResult(
-        RunResult(
-          id: _uuid.v4(),
-          eventId: next.eventId,
-          output: output,
-          completedAt: _clock.now().millisecondsSinceEpoch,
-        ),
+      final runResult = RunResult(
+        id: _uuid.v4(),
+        eventId: next.eventId,
+        output: output,
+        completedAt: _clock.now().millisecondsSinceEpoch,
       );
+
+      if (session != null && memoryService != null) {
+        final writes = memoryService!.buildWritesForRun(
+          session: session,
+          event: event,
+          runResult: runResult,
+          readEntries: memoryReads,
+        );
+        await _db.insertRunResultWithMemory(
+          runResult: runResult,
+          eventId: event.id,
+          readEntries: memoryReads,
+          writeEntries: writes,
+        );
+        try {
+          await memoryService!.compactSessionMemory(session.id);
+          await memoryService!.compactAgentMemory(session.agentId);
+        } catch (_) {
+          // Compaction is best-effort and must never block queue processing.
+        }
+      } else {
+        await _db.insertRunResult(runResult);
+      }
 
       await _applyHeartbeatSuppressionIfNeeded(event, output);
       await _db.markCompleted(next.id);
