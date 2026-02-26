@@ -1,0 +1,18 @@
+{
+  "cameras": [
+    {
+      "cameraId": "cam-living",
+      "name": "Living Room",
+      "location": "Living",
+      "status": "online",
+      "enabled": true
+    },
+    {
+      "cameraId": "cam-bedroom",
+      "name": "Bedroom",
+      "location": "Bedroom",
+      "status": "online",
+      "enabled": true
+    }
+  ]
+}
