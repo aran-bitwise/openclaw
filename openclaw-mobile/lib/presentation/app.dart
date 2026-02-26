@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -390,6 +391,21 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
 
   void _refreshViews() {
     if (!mounted) return;
+
+    if (toolId == 'tool.cameraSnapshot' && logs.isNotEmpty) {
+      try {
+        final parsed = jsonDecode(logs.first.outputRedacted);
+        if (parsed is Map<String, dynamic>) {
+          final checksum = parsed['checksum']?.toString() ?? '';
+          final preview = checksum.length > 8 ? checksum.substring(0, 8) : checksum;
+          setState(() {
+            _lastSnapshotSummary =
+                'Snapshot: url=${parsed['snapshotUrl'] ?? '-'} capturedAt=${parsed['capturedAt'] ?? '-'} checksum=$preview';
+          });
+        }
+      } catch (_) {}
+    }
+
     ref.invalidate(timelineProvider);
     ref.invalidate(queueViewProvider);
     ref.invalidate(sessionsByAgentProvider);
@@ -1006,6 +1022,9 @@ class _ToolingCard extends ConsumerWidget {
                   );
                 },
               ),
+            const SizedBox(height: 8),
+            _CameraGatewaySettingsCard(agentId: agentId, sessionId: sessionId),
+            const SizedBox(height: 8),
             Row(
               children: [
                 ElevatedButton(
@@ -1111,11 +1130,270 @@ class _ToolingCard extends ConsumerWidget {
       },
     );
     await ref.read(queueProcessorProvider).tick();
+
+    if (toolId == 'tool.cameraSnapshot' && logs.isNotEmpty) {
+      try {
+        final parsed = jsonDecode(logs.first.outputRedacted);
+        if (parsed is Map<String, dynamic>) {
+          final checksum = parsed['checksum']?.toString() ?? '';
+          final preview = checksum.length > 8 ? checksum.substring(0, 8) : checksum;
+          setState(() {
+            _lastSnapshotSummary =
+                'Snapshot: url=${parsed['snapshotUrl'] ?? '-'} capturedAt=${parsed['capturedAt'] ?? '-'} checksum=$preview';
+          });
+        }
+      } catch (_) {}
+    }
+
     ref.invalidate(timelineProvider);
     ref.invalidate(agentsProvider);
+    ref.invalidate(configuredCamerasProvider);
   }
 }
 
+class _CameraGatewaySettingsCard extends ConsumerStatefulWidget {
+  const _CameraGatewaySettingsCard({required this.agentId, required this.sessionId});
+
+  final String? agentId;
+  final String? sessionId;
+
+  @override
+  ConsumerState<_CameraGatewaySettingsCard> createState() => _CameraGatewaySettingsCardState();
+}
+
+class _CameraGatewaySettingsCardState extends ConsumerState<_CameraGatewaySettingsCard> {
+  final _baseUrlController = TextEditingController();
+  final _tokenController = TextEditingController();
+  String _mode = 'latest';
+  String? _lastSnapshotSummary;
+
+  @override
+  void dispose() {
+    _baseUrlController.dispose();
+    _tokenController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final settingsAsync = ref.watch(cameraGatewaySettingsProvider);
+    final configuredAsync = ref.watch(configuredCamerasProvider);
+
+    return settingsAsync.when(
+      data: (settings) {
+        if (_baseUrlController.text.isEmpty) {
+          _baseUrlController.text = settings.baseUrl;
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Cameras', style: TextStyle(fontWeight: FontWeight.w600)),
+            TextField(controller: _baseUrlController, decoration: const InputDecoration(labelText: 'Gateway base URL')),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _tokenController,
+              decoration: InputDecoration(
+                labelText: settings.tokenSet ? 'Gateway token (saved)' : 'Gateway token',
+                hintText: settings.tokenSet ? '••••••••' : 'demo-token',
+              ),
+              obscureText: true,
+            ),
+            Row(
+              children: [
+                Switch(
+                  value: settings.enabled,
+                  onChanged: (value) async {
+                    await ref.read(databaseProvider).saveCameraGatewaySettings(baseUrl: settings.baseUrl, enabled: value);
+                    ref.invalidate(cameraGatewaySettingsProvider);
+                  },
+                ),
+                const Text('Enabled'),
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  onPressed: () async {
+                    final token = _tokenController.text.trim();
+                    if (token.isNotEmpty) {
+                      await ref.read(secretStoreProvider).saveCameraGatewayToken(token);
+                    }
+                    await ref
+                        .read(databaseProvider)
+                        .saveCameraGatewaySettings(baseUrl: _baseUrlController.text.trim(), enabled: settings.enabled, tokenSet: token.isNotEmpty || settings.tokenSet);
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Camera gateway settings saved')));
+                    }
+                    _tokenController.clear();
+                    ref.invalidate(cameraGatewaySettingsProvider);
+                  },
+                  child: const Text('Save settings'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                ElevatedButton(
+                  onPressed: (widget.agentId == null || widget.sessionId == null)
+                      ? null
+                      : () => _runCameraTool(
+                            toolId: 'tool.cameraList',
+                            input: const {'includeDisabled': false},
+                            consentNeeded: false,
+                          ),
+                  child: const Text('Sync cameras'),
+                ),
+                const SizedBox(width: 8),
+                DropdownButton<String>(
+                  value: _mode,
+                  items: const [
+                    DropdownMenuItem(value: 'latest', child: Text('latest')),
+                    DropdownMenuItem(value: 'test_ok', child: Text('test_ok')),
+                    DropdownMenuItem(value: 'test_fall', child: Text('test_fall')),
+                    DropdownMenuItem(value: 'test_uncertain', child: Text('test_uncertain')),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) {
+                      setState(() {
+                        _mode = value;
+                      });
+                    }
+                  },
+                ),
+              ],
+            ),
+            if (_lastSnapshotSummary != null) Text(_lastSnapshotSummary!, style: const TextStyle(fontSize: 12)),
+            configuredAsync.when(
+              data: (configured) {
+                if (configured.isEmpty) {
+                  return const Text('No configured cameras yet. Run Sync cameras.', style: TextStyle(fontSize: 12));
+                }
+                return Column(
+                  children: [
+                    for (final camera in configured)
+                      ListTile(
+                        dense: true,
+                        title: Text('${camera.name} (${camera.cameraId})'),
+                        subtitle: Text('${camera.location} • enabled=${camera.enabled} • lastSeen=${camera.lastSeenAt ?? '-'}'),
+                        trailing: Wrap(
+                          spacing: 4,
+                          children: [
+                            Switch(
+                              value: camera.enabled,
+                              onChanged: (value) async {
+                                await ref.read(databaseProvider).setConfiguredCameraEnabled(cameraId: camera.cameraId, enabled: value);
+                                ref.invalidate(configuredCamerasProvider);
+                              },
+                            ),
+                            TextButton(
+                              onPressed: (widget.agentId == null || widget.sessionId == null)
+                                  ? null
+                                  : () => _runCameraTool(
+                                        toolId: 'tool.cameraSnapshot',
+                                        input: {'cameraId': camera.cameraId, 'mode': _mode},
+                                        consentNeeded: true,
+                                      ),
+                              child: const Text('Test snapshot'),
+                            ),
+                            IconButton(
+                              tooltip: 'Remove',
+                              onPressed: () async {
+                                await ref.read(databaseProvider).deleteConfiguredCamera(camera.cameraId);
+                                ref.invalidate(configuredCamerasProvider);
+                              },
+                              icon: const Icon(Icons.delete_outline),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                );
+              },
+              loading: () => const Padding(padding: EdgeInsets.all(8), child: CircularProgressIndicator()),
+              error: (error, _) => Text('Camera list error: $error'),
+            ),
+          ],
+        );
+      },
+      loading: () => const Padding(padding: EdgeInsets.all(8), child: CircularProgressIndicator()),
+      error: (error, _) => Text('Camera settings error: $error'),
+    );
+  }
+
+  Future<void> _runCameraTool({required String toolId, required Map<String, dynamic> input, required bool consentNeeded}) async {
+    final agent = ref.read(selectedAgentIdProvider);
+    final session = ref.read(selectedSessionIdProvider);
+    if (agent == null || session == null) return;
+
+    var consentApproved = false;
+    if (consentNeeded) {
+      final decision = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Tool consent required'),
+          content: Text('Approve running $toolId?'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Deny')),
+            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Approve')),
+          ],
+        ),
+      );
+      consentApproved = decision == true;
+    }
+
+    await ref.read(runtimeProvider).sendHumanMessage(
+      agentId: agent,
+      sessionId: session,
+      channelId: 'mobile-chat',
+      text: 'Invoke $toolId',
+      extraPayload: {
+        'toolRequest': {'toolId': toolId, 'input': input, 'idempotencyKey': '$toolId-${DateTime.now().millisecondsSinceEpoch}'},
+        'toolConsentApproved': consentApproved,
+      },
+    );
+    await ref.read(queueProcessorProvider).tick();
+
+    final logs = await ref.read(databaseProvider).listToolAuditLogs(sessionId: session, limit: 1);
+    if (toolId == 'tool.cameraList' && logs.isNotEmpty && logs.first.decisionAllowed) {
+      final output = logs.first.outputRedacted;
+      final parsed = jsonDecode(output.replaceAll('https://[redacted-url]', '"redacted-url"').replaceAll('…', ''));
+      if (parsed is Map && parsed['cameras'] is List) {
+        final now = DateTime.now().millisecondsSinceEpoch;
+        for (final item in parsed['cameras']) {
+          final cam = Map<String, dynamic>.from(item as Map);
+          await ref.read(databaseProvider).upsertConfiguredCamera(
+                ConfiguredCamera(
+                  cameraId: cam['cameraId']?.toString() ?? '',
+                  name: cam['name']?.toString() ?? '',
+                  location: cam['location']?.toString() ?? '',
+                  enabled: (cam['enabled'] as bool?) ?? true,
+                  createdAt: now,
+                  updatedAt: now,
+                  lastSeenAt: now,
+                ),
+              );
+        }
+      }
+    }
+
+
+    if (toolId == 'tool.cameraSnapshot' && logs.isNotEmpty) {
+      try {
+        final parsed = jsonDecode(logs.first.outputRedacted);
+        if (parsed is Map<String, dynamic>) {
+          final checksum = parsed['checksum']?.toString() ?? '';
+          final preview = checksum.length > 8 ? checksum.substring(0, 8) : checksum;
+          setState(() {
+            _lastSnapshotSummary =
+                'Snapshot: url=${parsed['snapshotUrl'] ?? '-'} capturedAt=${parsed['capturedAt'] ?? '-'} checksum=$preview';
+          });
+        }
+      } catch (_) {}
+    }
+
+    ref.invalidate(timelineProvider);
+    ref.invalidate(agentsProvider);
+    ref.invalidate(configuredCamerasProvider);
+  }
+}
 
 extension _IterableFirstOrNull<T> on Iterable<T> {
   T? get firstOrNull => isEmpty ? null : first;

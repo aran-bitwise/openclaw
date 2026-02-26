@@ -11,6 +11,8 @@ class DefaultToolRegistry implements ToolRegistry {
     _echo,
     _httpGet,
     _openUrl,
+    _cameraList,
+    _cameraSnapshot,
   ];
 
   @override
@@ -63,6 +65,64 @@ class DefaultToolRegistry implements ToolRegistry {
     outputSchema: {
       'type': 'object',
       'properties': {'deferred': {'type': 'boolean'}, 'reason': {'type': 'string'}},
+    },
+  );
+
+  static const _cameraList = ToolRegistration(
+    toolId: 'tool.cameraList',
+    capabilityCategory: 'camera',
+    requiredPermissions: ['camera:list'],
+    riskLevel: ToolRiskLevel.low,
+    inputSchema: {
+      'type': 'object',
+      'properties': {'includeDisabled': {'type': 'boolean'}},
+    },
+    outputSchema: {
+      'type': 'object',
+      'properties': {
+        'cameras': {
+          'type': 'array',
+          'items': {
+            'type': 'object',
+            'properties': {
+              'cameraId': {'type': 'string'},
+              'name': {'type': 'string'},
+              'location': {'type': 'string'},
+              'status': {'type': 'string'},
+              'enabled': {'type': 'boolean'},
+            },
+          },
+        },
+      },
+    },
+  );
+
+  static const _cameraSnapshot = ToolRegistration(
+    toolId: 'tool.cameraSnapshot',
+    capabilityCategory: 'camera',
+    requiredPermissions: ['camera:read'],
+    riskLevel: ToolRiskLevel.medium,
+    inputSchema: {
+      'type': 'object',
+      'properties': {
+        'cameraId': {'type': 'string'},
+        'mode': {
+          'type': 'string',
+          'enum': ['latest', 'test_ok', 'test_fall', 'test_uncertain'],
+        },
+      },
+      'required': ['cameraId'],
+    },
+    outputSchema: {
+      'type': 'object',
+      'properties': {
+        'cameraId': {'type': 'string'},
+        'capturedAt': {'type': 'string'},
+        'snapshotUrl': {'type': 'string'},
+        'checksum': {'type': 'string'},
+        'quality': {'type': 'object'},
+        'mode': {'type': 'string'},
+      },
     },
   );
 }

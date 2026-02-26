@@ -16,7 +16,7 @@ class AppDatabase extends GeneratedDatabase {
   static QueryExecutor _openConnection() => driftDatabase(name: 'openclaw_mobile');
 
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => 8;
 
   Future<void> init() async {
     await customStatement('''
@@ -208,6 +208,26 @@ class AppDatabase extends GeneratedDatabase {
         input_redacted TEXT NOT NULL,
         output_redacted TEXT NOT NULL,
         created_at INTEGER NOT NULL
+      )
+    ''');
+
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS app_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    ''');
+
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS configured_cameras (
+        camera_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        location TEXT NOT NULL,
+        enabled INTEGER NOT NULL,
+        last_seen_at INTEGER,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
       )
     ''');
   }
@@ -1000,6 +1020,80 @@ class AppDatabase extends GeneratedDatabase {
       updatedAt: row.read<int>('updated_at'),
     );
   }
+
+  Future<CameraGatewaySettings> getCameraGatewaySettings() async {
+    final baseUrl = await _readSetting('camera_gateway_base_url') ?? CameraGatewaySettings.defaultBaseUrl;
+    final enabledRaw = await _readSetting('camera_gateway_enabled') ?? '0';
+    final tokenSet = await _readSetting('camera_gateway_token_set') == '1';
+    return CameraGatewaySettings(baseUrl: baseUrl, enabled: enabledRaw == '1', tokenSet: tokenSet);
+  }
+
+  Future<void> saveCameraGatewaySettings({required String baseUrl, required bool enabled, bool? tokenSet}) async {
+    await _writeSetting('camera_gateway_base_url', baseUrl);
+    await _writeSetting('camera_gateway_enabled', enabled ? '1' : '0');
+    if (tokenSet != null) {
+      await _writeSetting('camera_gateway_token_set', tokenSet ? '1' : '0');
+    }
+  }
+
+  Future<List<ConfiguredCamera>> listConfiguredCameras() async {
+    final rows = await customSelect('SELECT * FROM configured_cameras ORDER BY name ASC').get();
+    return rows
+        .map(
+          (row) => ConfiguredCamera(
+            cameraId: row.read<String>('camera_id'),
+            name: row.read<String>('name'),
+            location: row.read<String>('location'),
+            enabled: row.read<int>('enabled') == 1,
+            lastSeenAt: row.read<int?>('last_seen_at'),
+            createdAt: row.read<int>('created_at'),
+            updatedAt: row.read<int>('updated_at'),
+          ),
+        )
+        .toList();
+  }
+
+  Future<void> upsertConfiguredCamera(ConfiguredCamera camera) async {
+    await customStatement(
+      '''
+      INSERT OR REPLACE INTO configured_cameras (
+        camera_id, name, location, enabled, last_seen_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      ''',
+      [
+        camera.cameraId,
+        camera.name,
+        camera.location,
+        camera.enabled ? 1 : 0,
+        camera.lastSeenAt,
+        camera.createdAt,
+        camera.updatedAt,
+      ],
+    );
+  }
+
+  Future<void> setConfiguredCameraEnabled({required String cameraId, required bool enabled}) async {
+    await customStatement(
+      'UPDATE configured_cameras SET enabled = ?, updated_at = ? WHERE camera_id = ?',
+      [enabled ? 1 : 0, _nowMs(), cameraId],
+    );
+  }
+
+  Future<void> deleteConfiguredCamera(String cameraId) async {
+    await customStatement('DELETE FROM configured_cameras WHERE camera_id = ?', [cameraId]);
+  }
+
+  Future<void> _writeSetting(String key, String value) async {
+    await customStatement(
+      'INSERT OR REPLACE INTO app_settings(key, value, updated_at) VALUES (?, ?, ?)',
+      [key, value, _nowMs()],
+    );
+  }
+
+  Future<String?> _readSetting(String key) async {
+    final row = await customSelect('SELECT value FROM app_settings WHERE key = ?', variables: [Variable.withString(key)]).getSingleOrNull();
+    return row?.read<String>('value');
+  }
 }
 
 class QueueItem {
@@ -1036,5 +1130,13 @@ class SecretStore {
 
   Future<String?> readProviderKey(String provider) async {
     return _storage.read(key: 'provider:$provider');
+  }
+
+  Future<void> saveCameraGatewayToken(String token) async {
+    await _storage.write(key: 'camera-gateway:token', value: token);
+  }
+
+  Future<String?> readCameraGatewayToken() async {
+    return _storage.read(key: 'camera-gateway:token');
   }
 }

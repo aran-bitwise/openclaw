@@ -804,3 +804,63 @@ class TimelineItem {
   final Event event;
   final QueueState state;
 }
+
+class CameraGatewaySettings {
+  const CameraGatewaySettings({
+    required this.baseUrl,
+    required this.enabled,
+    this.tokenSet = false,
+  });
+
+  static const defaultBaseUrl = 'http://10.0.2.2:8799';
+
+  final String baseUrl;
+  final bool enabled;
+  final bool tokenSet;
+
+  CameraGatewaySettings copyWith({String? baseUrl, bool? enabled, bool? tokenSet}) {
+    return CameraGatewaySettings(
+      baseUrl: baseUrl ?? this.baseUrl,
+      enabled: enabled ?? this.enabled,
+      tokenSet: tokenSet ?? this.tokenSet,
+    );
+  }
+}
+
+class ConfiguredCamera {
+  const ConfiguredCamera({
+    required this.cameraId,
+    required this.name,
+    required this.location,
+    required this.enabled,
+    required this.createdAt,
+    required this.updatedAt,
+    this.lastSeenAt,
+  });
+
+  final String cameraId;
+  final String name;
+  final String location;
+  final bool enabled;
+  final int createdAt;
+  final int updatedAt;
+  final int? lastSeenAt;
+
+  ConfiguredCamera copyWith({
+    String? name,
+    String? location,
+    bool? enabled,
+    int? updatedAt,
+    int? lastSeenAt,
+  }) {
+    return ConfiguredCamera(
+      cameraId: cameraId,
+      name: name ?? this.name,
+      location: location ?? this.location,
+      enabled: enabled ?? this.enabled,
+      createdAt: createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      lastSeenAt: lastSeenAt ?? this.lastSeenAt,
+    );
+  }
+}

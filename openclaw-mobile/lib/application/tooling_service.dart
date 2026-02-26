@@ -1,12 +1,16 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:uuid/uuid.dart';
 
 import '../domain/models.dart';
 import '../infrastructure/app_database.dart';
+import '../infrastructure/camera_gateway_client.dart';
 import 'clock.dart';
 import 'tool_registry.dart';
+
+typedef CameraClientFactory = CameraGatewayClient Function({required String baseUrl, required String bearerToken});
 
 class ToolExecutionResult {
   ToolExecutionResult({required this.invocation, required this.audit});
@@ -16,11 +20,15 @@ class ToolExecutionResult {
 }
 
 class ToolingService {
-  ToolingService(this._db, this._registry, this._clock);
+  ToolingService(this._db, this._registry, this._clock, {SecretStore? secretStore, CameraClientFactory? cameraClientFactory})
+    : _secretStore = secretStore ?? SecretStore(const FlutterSecureStorage()),
+      _cameraClientFactory = cameraClientFactory ?? CameraGatewayClient.new;
 
   final AppDatabase _db;
   final ToolRegistry _registry;
   final Clock _clock;
+  final SecretStore _secretStore;
+  final CameraClientFactory _cameraClientFactory;
   final _uuid = const Uuid();
 
   List<ToolRegistration> listRegisteredTools() => _registry.listTools();
@@ -119,12 +127,12 @@ class ToolingService {
       inputSchema: tool?.inputSchema ?? const {},
       outputSchema: tool?.outputSchema ?? const {},
       idempotencyKey: idempotencyKey,
-      inputRedacted: _redact(input),
+      inputRedacted: _redact(toolId: toolId, data: input),
       decisionAllowed: decisionAllowed,
       decisionReason: decisionReason,
       consentOutcome: consentOutcome,
       outcome: outcome,
-      outputRedacted: _redact(output),
+      outputRedacted: _redact(toolId: toolId, data: output),
       handoffTraceId: event.payload['handoffTraceId']?.toString(),
       rootEventId: event.payload['rootEventId']?.toString(),
       createdAt: now,
@@ -162,40 +170,17 @@ class ToolingService {
           'output': {'echo': input['message']?.toString() ?? ''},
         };
       case 'tool.httpGet':
-        final uriRaw = input['url']?.toString() ?? '';
-        if (uriRaw.isEmpty) {
-          return {
-            'outcome': 'blocked',
-            'reason': 'missing url',
-            'output': {'error': 'missing url'},
-          };
-        }
-        try {
-          final client = HttpClient();
-          final request = await client.getUrl(Uri.parse(uriRaw));
-          final response = await request.close();
-          final body = await utf8.decodeStream(response);
-          client.close(force: true);
-          return {
-            'outcome': 'success',
-            'output': {
-              'statusCode': response.statusCode,
-              'body': body.length > 200 ? '${body.substring(0, 200)}…' : body,
-            },
-          };
-        } on SocketException {
-          return {
-            'outcome': 'blocked',
-            'reason': 'network unavailable (offline fallback)',
-            'output': {'error': 'network unavailable (offline fallback)'},
-          };
-        }
+        return _executeHttpGet(input);
       case 'tool.openUrl':
         return {
           'outcome': 'blocked',
           'reason': 'openUrl is blocked in the mobile capability sandbox (deferred/not supported)',
           'output': {'deferred': true, 'reason': 'not supported in sandbox'},
         };
+      case 'tool.cameraList':
+        return _executeCameraList(input);
+      case 'tool.cameraSnapshot':
+        return _executeCameraSnapshot(input);
       default:
         return {
           'outcome': 'blocked',
@@ -205,8 +190,115 @@ class ToolingService {
     }
   }
 
-  String _redact(Map<String, dynamic> data) {
-    var encoded = jsonEncode(data);
+  Future<Map<String, dynamic>> _executeHttpGet(Map<String, dynamic> input) async {
+    final uriRaw = input['url']?.toString() ?? '';
+    if (uriRaw.isEmpty) {
+      return {
+        'outcome': 'blocked',
+        'reason': 'missing url',
+        'output': {'error': 'missing url'},
+      };
+    }
+    try {
+      final client = HttpClient();
+      final request = await client.getUrl(Uri.parse(uriRaw));
+      final response = await request.close();
+      final body = await utf8.decodeStream(response);
+      client.close(force: true);
+      return {
+        'outcome': 'success',
+        'output': {
+          'statusCode': response.statusCode,
+          'body': body.length > 200 ? '${body.substring(0, 200)}…' : body,
+        },
+      };
+    } on SocketException {
+      return {
+        'outcome': 'blocked',
+        'reason': 'network unavailable (offline fallback)',
+        'output': {'error': 'network unavailable (offline fallback)'},
+      };
+    }
+  }
+
+  Future<Map<String, dynamic>> _executeCameraList(Map<String, dynamic> input) async {
+    final settings = await _db.getCameraGatewaySettings();
+    if (!settings.enabled) {
+      return {
+        'outcome': 'blocked',
+        'reason': 'camera gateway disabled',
+        'output': {'error': 'camera gateway disabled'},
+      };
+    }
+
+    final token = await _secretStore.readCameraGatewayToken();
+    final client = _cameraClientFactory(baseUrl: settings.baseUrl, bearerToken: token ?? '');
+    try {
+      final cameras = await client.listCameras();
+      final includeDisabled = input['includeDisabled'] == true;
+      final filtered = includeDisabled ? cameras : cameras.where((c) => (c['enabled'] as bool?) != false).toList();
+      return {
+        'outcome': 'success',
+        'output': {'cameras': filtered},
+      };
+    } on CameraGatewayException catch (e) {
+      return {
+        'outcome': 'blocked',
+        'reason': e.message,
+        'output': {'error': e.message, 'code': e.code},
+      };
+    }
+  }
+
+  Future<Map<String, dynamic>> _executeCameraSnapshot(Map<String, dynamic> input) async {
+    final settings = await _db.getCameraGatewaySettings();
+    if (!settings.enabled) {
+      return {
+        'outcome': 'blocked',
+        'reason': 'camera gateway disabled',
+        'output': {'error': 'camera gateway disabled'},
+      };
+    }
+
+    final cameraId = input['cameraId']?.toString() ?? '';
+    if (cameraId.isEmpty) {
+      return {
+        'outcome': 'blocked',
+        'reason': 'missing cameraId',
+        'output': {'error': 'missing cameraId'},
+      };
+    }
+
+    final mode = input['mode']?.toString() ?? 'latest';
+    final token = await _secretStore.readCameraGatewayToken();
+    final client = _cameraClientFactory(baseUrl: settings.baseUrl, bearerToken: token ?? '');
+    try {
+      final snapshot = await client.getSnapshot(cameraId: cameraId, mode: mode);
+      return {'outcome': 'success', 'output': snapshot};
+    } on CameraGatewayException catch (e) {
+      return {
+        'outcome': 'blocked',
+        'reason': e.message,
+        'output': {'error': e.message, 'code': e.code},
+      };
+    }
+  }
+
+  String _redact({required String toolId, required Map<String, dynamic> data}) {
+    final safe = Map<String, dynamic>.from(data);
+    safe.removeWhere((key, _) {
+      final normalized = key.toLowerCase();
+      return normalized.contains('token') || normalized.contains('authorization') || normalized.contains('secret');
+    });
+
+    if (toolId == 'tool.cameraSnapshot' && safe['snapshotUrl'] is String) {
+      final uri = Uri.tryParse(safe['snapshotUrl'].toString());
+      if (uri != null) {
+        safe['snapshotUrl'] = '${uri.scheme}://${uri.host}${uri.hasPort ? ':${uri.port}' : ''}${uri.path}';
+      }
+    }
+
+    var encoded = jsonEncode(safe);
     if (encoded.length > 160) {
       encoded = '${encoded.substring(0, 160)}…';
     }

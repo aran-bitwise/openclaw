@@ -1,3 +1,4 @@
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../application/clock.dart';
@@ -59,8 +60,29 @@ final queueProcessorProvider = Provider<QueueProcessor>((ref) {
 
 final toolRegistryProvider = Provider<ToolRegistry>((_) => DefaultToolRegistry());
 
+
+final secretStoreProvider = Provider<SecretStore>((_) => SecretStore(const FlutterSecureStorage()));
+
+final cameraGatewaySettingsProvider = FutureProvider<CameraGatewaySettings>((ref) async {
+  final db = ref.watch(databaseProvider);
+  await db.init();
+  return db.getCameraGatewaySettings();
+});
+
+final configuredCamerasProvider = FutureProvider<List<ConfiguredCamera>>((ref) async {
+  final db = ref.watch(databaseProvider);
+  await db.init();
+  return db.listConfiguredCameras();
+});
+
+
 final toolingServiceProvider = Provider<ToolingService>((ref) {
-  return ToolingService(ref.watch(databaseProvider), ref.watch(toolRegistryProvider), ref.watch(clockProvider));
+  return ToolingService(
+    ref.watch(databaseProvider),
+    ref.watch(toolRegistryProvider),
+    ref.watch(clockProvider),
+    secretStore: ref.watch(secretStoreProvider),
+  );
 });
 
 
