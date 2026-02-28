@@ -1,0 +1,212 @@
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../application/clock.dart';
+import '../application/cron_service.dart';
+import '../application/gateway_router.dart';
+import '../application/heartbeat_service.dart';
+import '../application/hook_service.dart';
+import '../application/inspector_service.dart';
+import '../application/handoff_service.dart';
+import '../application/memory_service.dart';
+import '../application/queue_processor.dart';
+import '../application/relay_ingest_service.dart';
+import '../application/runtime_service.dart';
+import '../application/safety_check_service.dart';
+import '../application/tool_registry.dart';
+import '../application/tooling_service.dart';
+import '../application/workflow_dispatcher.dart';
+import '../domain/models.dart';
+import '../infrastructure/app_database.dart';
+import '../infrastructure/relay_client.dart';
+
+const _relayBaseUrl = String.fromEnvironment('OPENCLAW_RELAY_BASE_URL', defaultValue: 'http://127.0.0.1:8787');
+const _relayToken = String.fromEnvironment('OPENCLAW_RELAY_TOKEN', defaultValue: 'dev-mobile-token');
+
+final clockProvider = Provider<Clock>((_) => SystemClock());
+
+final databaseProvider = Provider<AppDatabase>((ref) {
+  final clock = ref.watch(clockProvider);
+  final db = AppDatabase(nowMs: () => clock.now().millisecondsSinceEpoch);
+  ref.onDispose(db.close);
+  return db;
+});
+
+final runtimeProvider = Provider<RuntimeService>((ref) {
+  return RuntimeService(ref.watch(databaseProvider), GatewayRouter(), ref.watch(clockProvider));
+});
+
+
+final handoffServiceProvider = Provider<HandoffService>((ref) {
+  return HandoffService(ref.watch(databaseProvider), ref.watch(runtimeProvider), ref.watch(clockProvider));
+});
+
+final hookServiceProvider = Provider<HookService>((ref) {
+  return HookService(ref.watch(databaseProvider), ref.watch(runtimeProvider), ref.watch(clockProvider));
+});
+
+final queueProcessorProvider = Provider<QueueProcessor>((ref) {
+  return QueueProcessor(
+    ref.watch(databaseProvider),
+    ref.watch(clockProvider),
+    onTurnStart: (event, session, {success}) => ref.read(hookServiceProvider).emitTurnStartForEvent(event, session),
+    onTurnEnd: (event, session, {success}) => ref
+        .read(hookServiceProvider)
+        .emitTurnEndForEvent(event, session, success: success ?? true),
+    onAgentHandoffProcessed: (event, session) => ref.read(handoffServiceProvider).handleProcessedHandoff(event, session),
+    memoryService: ref.read(memoryServiceProvider),
+    toolingService: ref.read(toolingServiceProvider),
+    safetyCheckService: ref.read(safetyCheckServiceProvider),
+    workflowDispatcher: ref.read(workflowDispatcherProvider),
+  );
+});
+
+
+final toolRegistryProvider = Provider<ToolRegistry>((_) => DefaultToolRegistry());
+
+
+final secretStoreProvider = Provider<SecretStore>((_) => SecretStore(const FlutterSecureStorage()));
+
+final cameraGatewaySettingsProvider = FutureProvider<CameraGatewaySettings>((ref) async {
+  final db = ref.watch(databaseProvider);
+  await db.init();
+  return db.getCameraGatewaySettings();
+});
+
+final configuredCamerasProvider = FutureProvider<List<ConfiguredCamera>>((ref) async {
+  final db = ref.watch(databaseProvider);
+  await db.init();
+  return db.listConfiguredCameras();
+});
+
+
+final toolingServiceProvider = Provider<ToolingService>((ref) {
+  return ToolingService(
+    ref.watch(databaseProvider),
+    ref.watch(toolRegistryProvider),
+    ref.watch(clockProvider),
+    secretStore: ref.watch(secretStoreProvider),
+  );
+});
+
+final safetyCheckServiceProvider = Provider<SafetyCheckService>((ref) {
+  return SafetyCheckService(ref.watch(databaseProvider), ref.watch(toolingServiceProvider), ref.watch(clockProvider));
+});
+
+final workflowDispatcherProvider = Provider<WorkflowDispatcher>((ref) {
+  final safety = ref.watch(safetyCheckServiceProvider);
+  return WorkflowDispatcher(
+    handlers: {
+      'safety_check': (event, session) async {
+        final outcome = await safety.runSafetyCheck(event: event, session: session);
+        return WorkflowDispatchResult(handled: true, output: outcome);
+      },
+    },
+  );
+});
+
+
+final inspectorServiceProvider = Provider<InspectorService>((ref) {
+  return InspectorService(ref.watch(databaseProvider), ref.watch(clockProvider));
+});
+
+final memoryServiceProvider = Provider<MemoryService>((ref) {
+  return MemoryService(ref.watch(databaseProvider), ref.watch(clockProvider));
+});
+
+final relayClientProvider = Provider<RelayClient>((_) {
+  return HttpRelayClient(baseUrl: _relayBaseUrl, bearerToken: _relayToken);
+});
+
+final relayIngestServiceProvider = Provider<RelayIngestService>((ref) {
+  return RelayIngestService(
+    ref.watch(relayClientProvider),
+    ref.watch(runtimeProvider),
+    ref.watch(queueProcessorProvider),
+    ref.watch(clockProvider),
+  );
+});
+
+final cronServiceProvider = Provider<CronService>((ref) {
+  return CronService(
+    ref.watch(databaseProvider),
+    ref.watch(runtimeProvider),
+    ref.watch(queueProcessorProvider),
+    ref.watch(clockProvider),
+  );
+});
+
+final heartbeatServiceProvider = Provider<HeartbeatService>((ref) {
+  return HeartbeatService(
+    ref.watch(databaseProvider),
+    ref.watch(runtimeProvider),
+    ref.watch(queueProcessorProvider),
+    ref.watch(clockProvider),
+  );
+});
+
+final agentsProvider = FutureProvider<List<AgentProfile>>((ref) async {
+  final db = ref.watch(databaseProvider);
+  await db.init();
+  return db.listAgents();
+});
+
+final selectedAgentIdProvider = StateProvider<String?>((_) => null);
+final selectedSessionIdProvider = StateProvider<String?>((_) => null);
+
+final sessionsByAgentProvider = FutureProvider<List<Session>>((ref) async {
+  final db = ref.watch(databaseProvider);
+  await db.init();
+  final agentId = ref.watch(selectedAgentIdProvider);
+  if (agentId == null) return [];
+  return db.listSessionsByAgent(agentId);
+});
+
+final timelineEventTypeFilterProvider = StateProvider<EventType?>((_) => null);
+final timelineStateFilterProvider = StateProvider<QueueState?>((_) => null);
+final timelineTraceFilterProvider = StateProvider<String>((_) => '');
+final timelineSortDescendingProvider = StateProvider<bool>((_) => true);
+final timelineShowOnlySessionProvider = StateProvider<bool>((_) => true);
+
+final timelineRawProvider = FutureProvider<List<TimelineItem>>((ref) async {
+  final db = ref.watch(databaseProvider);
+  await db.init();
+  final sessionId = ref.watch(selectedSessionIdProvider);
+  final selectedAgent = ref.watch(selectedAgentIdProvider);
+  final onlySession = ref.watch(timelineShowOnlySessionProvider);
+  if (onlySession) {
+    if (sessionId == null) return [];
+    return db.listTimelineBySession(sessionId);
+  }
+  if (selectedAgent == null) return [];
+  return db.listTimelineByAgent(selectedAgent);
+});
+
+final timelineProvider = FutureProvider<List<TimelineItem>>((ref) async {
+  final items = await ref.watch(timelineRawProvider.future);
+  final typeFilter = ref.watch(timelineEventTypeFilterProvider);
+  final stateFilter = ref.watch(timelineStateFilterProvider);
+  final traceFilter = ref.watch(timelineTraceFilterProvider).trim();
+  final descending = ref.watch(timelineSortDescendingProvider);
+
+  var filtered = items.where((item) {
+    if (typeFilter != null && item.event.type != typeFilter) return false;
+    if (stateFilter != null && item.state != stateFilter) return false;
+    if (traceFilter.isNotEmpty) {
+      final trace = item.event.payload['handoffTraceId']?.toString() ?? '';
+      if (!trace.contains(traceFilter)) return false;
+    }
+    return true;
+  }).toList();
+
+  filtered.sort((a, b) => descending
+      ? b.event.createdAt.compareTo(a.event.createdAt)
+      : a.event.createdAt.compareTo(b.event.createdAt));
+  return filtered;
+});
+
+final queueViewProvider = FutureProvider<List<Map<String, Object?>>>((ref) async {
+  final db = ref.watch(databaseProvider);
+  await db.init();
+  return db.listQueueItems();
+});
