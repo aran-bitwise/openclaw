@@ -12,6 +12,7 @@ import '../application/memory_service.dart';
 import '../application/queue_processor.dart';
 import '../application/relay_ingest_service.dart';
 import '../application/runtime_service.dart';
+import '../application/safety_check_service.dart';
 import '../application/tool_registry.dart';
 import '../application/tooling_service.dart';
 import '../domain/models.dart';
@@ -54,6 +55,7 @@ final queueProcessorProvider = Provider<QueueProcessor>((ref) {
     onAgentHandoffProcessed: (event, session) => ref.read(handoffServiceProvider).handleProcessedHandoff(event, session),
     memoryService: ref.read(memoryServiceProvider),
     toolingService: ref.read(toolingServiceProvider),
+    safetyCheckService: ref.read(safetyCheckServiceProvider),
   );
 });
 
@@ -83,6 +85,10 @@ final toolingServiceProvider = Provider<ToolingService>((ref) {
     ref.watch(clockProvider),
     secretStore: ref.watch(secretStoreProvider),
   );
+});
+
+final safetyCheckServiceProvider = Provider<SafetyCheckService>((ref) {
+  return SafetyCheckService(ref.watch(databaseProvider), ref.watch(toolingServiceProvider), ref.watch(clockProvider));
 });
 
 

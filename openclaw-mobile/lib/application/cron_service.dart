@@ -37,6 +37,7 @@ class CronService {
           scheduleId: schedule.scheduleId,
           dueAt: dueAt,
           idempotencyKey: idempotencyKey,
+          extraPayload: _isSafetySchedule(schedule) ? const {'workflow': 'safety_check', 'toolConsentApproved': true} : null,
         );
 
         mutable = mutable.copyWith(lastRunAt: dueAt, nextRunAt: _nextOccurrence(schedule.rule, dueAt));
@@ -84,12 +85,60 @@ class CronService {
       scheduleId: schedule.scheduleId,
       dueAt: dueAt,
       idempotencyKey: idempotencyKey,
+      extraPayload: _isSafetySchedule(schedule) ? const {'workflow': 'safety_check', 'toolConsentApproved': true} : null,
     );
 
     if (inserted) {
       await _db.upsertCronSchedule(schedule.copyWith(lastRunAt: dueAt, nextRunAt: _nextOccurrence(schedule.rule, dueAt)));
       await _processor.tick();
     }
+  }
+
+  Future<void> createSafetyCheckSchedule({required String agentId, required String sessionId, required String channelId}) async {
+    final now = _clock.now();
+    final first = now.add(const Duration(minutes: 2));
+    final minute = first.hour * 60 + first.minute;
+    final schedule = CronSchedule(
+      scheduleId: 'safety-check-${_uuid.v4()}',
+      agentId: agentId,
+      channelId: channelId,
+      sessionId: sessionId,
+      enabled: true,
+      rule: CronScheduleRule(type: CronScheduleType.daily, timeOfDayMinute: minute),
+      timezoneId: 'local-device',
+      missedRunPolicy: MissedRunPolicy.skip,
+      promptTemplate: 'Safety Check Run',
+      nextRunAt: _nextOccurrence(CronScheduleRule(type: CronScheduleType.daily, timeOfDayMinute: minute), now.millisecondsSinceEpoch),
+    );
+    await _db.upsertCronSchedule(schedule);
+  }
+
+  Future<void> runSafetyCheckNow({
+    required String agentId,
+    required String sessionId,
+    required String channelId,
+    String modeOverride = 'latest',
+  }) async {
+    final dueAt = _clock.now().millisecondsSinceEpoch;
+    final bucket = dueAt ~/ 60000;
+    final idempotencyKey = 'safety-manual-$sessionId-$modeOverride-$bucket';
+    final inserted = await _runtime.sendCron(
+      agentId: agentId,
+      sessionId: sessionId,
+      channelId: channelId,
+      prompt: 'Safety Check Run',
+      scheduleId: 'safety-manual',
+      dueAt: dueAt,
+      idempotencyKey: idempotencyKey,
+      extraPayload: {'workflow': 'safety_check', 'modeOverride': modeOverride, 'toolConsentApproved': true},
+    );
+    if (inserted) {
+      await _processor.tick();
+    }
+  }
+
+  bool _isSafetySchedule(CronSchedule schedule) {
+    return schedule.scheduleId.startsWith('safety-check-') || schedule.promptTemplate.toLowerCase().contains('safety check');
   }
 
   List<int> _resolveDueTimes(CronSchedule schedule, DateTime now) {

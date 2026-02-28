@@ -527,7 +527,7 @@ class _ChatWorkbenchScreenState extends ConsumerState<ChatWorkbenchScreen> with 
       case EventType.heartbeat:
         return 'heartbeat';
       case EventType.cron:
-        return 'cron';
+        return payload['workflow']?.toString() == 'safety_check' ? 'Safety Check Run' : 'cron';
       case EventType.webhook:
         final provider = payload['provider']?.toString() ?? 'webhook';
         return 'Webhook ($provider)';
@@ -1240,6 +1240,38 @@ class _CameraGatewaySettingsCardState extends ConsumerState<_CameraGatewaySettin
                             consentNeeded: false,
                           ),
                   child: const Text('Sync cameras'),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  onPressed: (widget.agentId == null || widget.sessionId == null)
+                      ? null
+                      : () async {
+                          await ref.read(cronServiceProvider).createSafetyCheckSchedule(
+                                agentId: widget.agentId!,
+                                sessionId: widget.sessionId!,
+                                channelId: 'mobile-chat',
+                              );
+                          ref.invalidate(agentsProvider);
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Safety check schedule created')));
+                          }
+                        },
+                  child: const Text('Create safety check schedule'),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  onPressed: (widget.agentId == null || widget.sessionId == null)
+                      ? null
+                      : () async {
+                          await ref.read(cronServiceProvider).runSafetyCheckNow(
+                                agentId: widget.agentId!,
+                                sessionId: widget.sessionId!,
+                                channelId: 'mobile-chat',
+                                modeOverride: _mode,
+                              );
+                          ref.invalidate(timelineProvider);
+                        },
+                  child: const Text('Run safety check now'),
                 ),
                 const SizedBox(width: 8),
                 DropdownButton<String>(

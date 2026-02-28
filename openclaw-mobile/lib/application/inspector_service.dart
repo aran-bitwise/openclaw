@@ -114,7 +114,7 @@ class InspectorService {
       case EventType.heartbeat:
         return 'Heartbeat';
       case EventType.cron:
-        return 'Cron';
+        return event.payload['workflow']?.toString() == 'safety_check' ? 'Safety Check Run' : 'Cron';
       case EventType.internalHook:
         return 'Internal Hook (${event.payload['hookType'] ?? 'unknown'})';
       case EventType.webhook:

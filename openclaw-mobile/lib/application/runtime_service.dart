@@ -97,6 +97,7 @@ class RuntimeService {
     required String scheduleId,
     required int dueAt,
     required String idempotencyKey,
+    Map<String, dynamic>? extraPayload,
   }) {
     return ingestEnvelope(
       InboundEnvelope(
@@ -111,6 +112,7 @@ class RuntimeService {
           'scheduleId': scheduleId,
           'dueAt': dueAt,
           'generatedAt': _clock.now().toIso8601String(),
+          if (extraPayload != null) ...extraPayload,
         },
       ),
     );

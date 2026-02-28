@@ -173,6 +173,39 @@ void main() {
     expect(allowed.invocation.outcome, 'success');
   });
 
+
+
+  test('tool.fallDetect returns deterministic verdict by fixture URL', () async {
+    await tooling.setPermission(agentId: 'agent-a', toolId: 'tool.fallDetect', granted: true);
+
+    Future<ToolExecutionResult?> run(String eventId, String url) {
+      final e = Event(
+        id: eventId,
+        sessionId: session.id,
+        type: EventType.humanMessage,
+        payload: {
+          'toolRequest': {
+            'toolId': 'tool.fallDetect',
+            'input': {'snapshotUrl': url, 'cameraId': 'cam-living', 'checksum': 'abcdef123456'},
+            'idempotencyKey': 'idem-$eventId',
+          },
+        },
+        idempotencyKey: 'evt-$eventId',
+        createdAt: 1,
+      );
+      return tooling.maybeInvokeFromEvent(e, session, consentApproved: true);
+    }
+
+    final fall = await run('fall', 'http://10.0.2.2:8799/fixtures/fall.jpg');
+    final uncertain = await run('uncertain', 'http://10.0.2.2:8799/fixtures/uncertain.jpg');
+    final ok = await run('ok', 'http://10.0.2.2:8799/fixtures/ok.jpg');
+
+    expect(fall!.invocation.outputRedacted, contains('fall_suspected'));
+    expect(uncertain!.invocation.outputRedacted, contains('uncertain'));
+    expect(ok!.invocation.outputRedacted, contains('"ok"'));
+    expect(fall.invocation.inputRedacted, isNot(contains('abcdef123456')));
+  });
+
   test('tool.cameraSnapshot requires consent and redacts token/query in audit', () async {
     await db.saveCameraGatewaySettings(baseUrl: 'http://10.0.2.2:8799', enabled: true, tokenSet: true);
     await SecretStore(const FlutterSecureStorage()).saveCameraGatewayToken('demo-token');

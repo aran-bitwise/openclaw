@@ -13,6 +13,7 @@ class DefaultToolRegistry implements ToolRegistry {
     _openUrl,
     _cameraList,
     _cameraSnapshot,
+    _fallDetect,
   ];
 
   @override
@@ -122,6 +123,36 @@ class DefaultToolRegistry implements ToolRegistry {
         'checksum': {'type': 'string'},
         'quality': {'type': 'object'},
         'mode': {'type': 'string'},
+      },
+    },
+  );
+
+  static const _fallDetect = ToolRegistration(
+    toolId: 'tool.fallDetect',
+    capabilityCategory: 'safety-ml',
+    requiredPermissions: ['safety:detect'],
+    riskLevel: ToolRiskLevel.medium,
+    inputSchema: {
+      'type': 'object',
+      'properties': {
+        'snapshotUrl': {'type': 'string'},
+        'cameraId': {'type': 'string'},
+        'checksum': {'type': 'string'},
+      },
+      'required': ['snapshotUrl', 'cameraId'],
+    },
+    outputSchema: {
+      'type': 'object',
+      'properties': {
+        'verdict': {
+          'type': 'string',
+          'enum': ['ok', 'uncertain', 'fall_suspected'],
+        },
+        'confidence': {'type': 'number'},
+        'reasons': {
+          'type': 'array',
+          'items': {'type': 'string'},
+        },
       },
     },
   );

@@ -162,6 +162,36 @@ class ToolingService {
     return ToolExecutionResult(invocation: invocation, audit: audit);
   }
 
+
+
+  Future<ToolExecutionResult?> invokeToolForEvent({
+    required Event event,
+    required Session session,
+    required String toolId,
+    required Map<String, dynamic> input,
+    required String idempotencyKey,
+    required bool consentApproved,
+  }) {
+    final payload = Map<String, dynamic>.from(event.payload)
+      ..['toolRequest'] = {
+        'toolId': toolId,
+        'input': input,
+        'idempotencyKey': idempotencyKey,
+      }
+      ..['toolConsentApproved'] = consentApproved;
+
+    final synthetic = Event(
+      id: event.id,
+      sessionId: event.sessionId,
+      type: event.type,
+      payload: payload,
+      idempotencyKey: event.idempotencyKey,
+      createdAt: event.createdAt,
+      schemaVersion: event.schemaVersion,
+    );
+    return maybeInvokeFromEvent(synthetic, session, consentApproved: consentApproved);
+  }
+
   Future<Map<String, dynamic>> _executeTool({required ToolRegistration tool, required Map<String, dynamic> input}) async {
     switch (tool.toolId) {
       case 'tool.echo':
@@ -181,6 +211,8 @@ class ToolingService {
         return _executeCameraList(input);
       case 'tool.cameraSnapshot':
         return _executeCameraSnapshot(input);
+      case 'tool.fallDetect':
+        return _executeFallDetect(input);
       default:
         return {
           'outcome': 'blocked',
@@ -284,6 +316,40 @@ class ToolingService {
     }
   }
 
+
+
+  Future<Map<String, dynamic>> _executeFallDetect(Map<String, dynamic> input) async {
+    final snapshotUrl = input['snapshotUrl']?.toString().toLowerCase() ?? '';
+    if (snapshotUrl.contains('fall')) {
+      return {
+        'outcome': 'success',
+        'output': {
+          'verdict': 'fall_suspected',
+          'confidence': 0.92,
+          'reasons': ['fixture:fall'],
+        },
+      };
+    }
+    if (snapshotUrl.contains('uncertain')) {
+      return {
+        'outcome': 'success',
+        'output': {
+          'verdict': 'uncertain',
+          'confidence': 0.55,
+          'reasons': ['fixture:uncertain'],
+        },
+      };
+    }
+    return {
+      'outcome': 'success',
+      'output': {
+        'verdict': 'ok',
+        'confidence': 0.90,
+        'reasons': ['fixture:ok'],
+      },
+    };
+  }
+
   String _redact({required String toolId, required Map<String, dynamic> data}) {
     final safe = Map<String, dynamic>.from(data);
     safe.removeWhere((key, _) {
@@ -291,18 +357,25 @@ class ToolingService {
       return normalized.contains('token') || normalized.contains('authorization') || normalized.contains('secret');
     });
 
-    if (toolId == 'tool.cameraSnapshot' && safe['snapshotUrl'] is String) {
+    if ((toolId == 'tool.cameraSnapshot' || toolId == 'tool.fallDetect') && safe['snapshotUrl'] is String) {
       final uri = Uri.tryParse(safe['snapshotUrl'].toString());
       if (uri != null) {
         safe['snapshotUrl'] = '${uri.scheme}://${uri.host}${uri.hasPort ? ':${uri.port}' : ''}${uri.path}';
       }
     }
 
+    if (toolId == 'tool.fallDetect' && safe['checksum'] is String) {
+      final checksum = safe['checksum'].toString();
+      safe['checksum'] = checksum.length > 8 ? checksum.substring(0, 8) : checksum;
+    }
+
     var encoded = jsonEncode(safe);
-    if (encoded.length > 160) {
+    if (toolId != 'tool.cameraSnapshot' && toolId != 'tool.fallDetect' && encoded.length > 160) {
       encoded = '${encoded.substring(0, 160)}…';
     }
-    encoded = encoded.replaceAll(RegExp(r'https?://[^"\s]+'), 'https://[redacted-url]');
+    if (toolId != 'tool.cameraSnapshot' && toolId != 'tool.fallDetect') {
+      encoded = encoded.replaceAll(RegExp(r'https?://[^"\s]+'), 'https://[redacted-url]');
+    }
     return encoded;
   }
 }
