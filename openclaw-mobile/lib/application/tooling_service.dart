@@ -43,6 +43,7 @@ class ToolingService {
     Event event,
     Session session, {
     bool consentApproved = false,
+    String? consentReasonOverride,
   }) async {
     final request = event.payload['toolRequest'];
     if (request is! Map) return null;
@@ -100,7 +101,7 @@ class ToolingService {
             decisionReason = 'runtime consent required for ${tool.riskLevel.name} risk tool';
           } else {
             consentOutcome = 'approved';
-            decisionReason = 'permission granted + runtime consent approved';
+            decisionReason = consentReasonOverride ?? 'permission granted + runtime consent approved';
           }
         }
 
@@ -171,6 +172,7 @@ class ToolingService {
     required Map<String, dynamic> input,
     required String idempotencyKey,
     required bool consentApproved,
+    String? consentReasonOverride,
   }) {
     final payload = Map<String, dynamic>.from(event.payload)
       ..['toolRequest'] = {
@@ -189,7 +191,12 @@ class ToolingService {
       createdAt: event.createdAt,
       schemaVersion: event.schemaVersion,
     );
-    return maybeInvokeFromEvent(synthetic, session, consentApproved: consentApproved);
+    return maybeInvokeFromEvent(
+      synthetic,
+      session,
+      consentApproved: consentApproved,
+      consentReasonOverride: consentReasonOverride,
+    );
   }
 
   Future<Map<String, dynamic>> _executeTool({required ToolRegistration tool, required Map<String, dynamic> input}) async {

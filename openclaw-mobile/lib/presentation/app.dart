@@ -1271,7 +1271,7 @@ class _CameraGatewaySettingsCardState extends ConsumerState<_CameraGatewaySettin
                               );
                           ref.invalidate(timelineProvider);
                         },
-                  child: const Text('Run safety check now'),
+                  child: const Text('Run safety check now (with consent)'),
                 ),
                 const SizedBox(width: 8),
                 DropdownButton<String>(
@@ -1292,6 +1292,63 @@ class _CameraGatewaySettingsCardState extends ConsumerState<_CameraGatewaySettin
                 ),
               ],
             ),
+            if (widget.agentId != null)
+              FutureBuilder<AgentProfile?>(
+                future: ref.read(databaseProvider).getAgent(widget.agentId!),
+                builder: (context, snapshot) {
+                  final profile = snapshot.data;
+                  final enabled = profile?.safety.safetyCheckAutoConsentEnabled ?? false;
+                  return Row(
+                    children: [
+                      Switch(
+                        value: enabled,
+                        onChanged: (value) async {
+                          if (profile == null) return;
+                          await ref.read(runtimeProvider).updateSafetySettings(
+                                profile.id,
+                                profile.safety.copyWith(safetyCheckAutoConsentEnabled: value),
+                              );
+                          ref.invalidate(agentsProvider);
+                          setState(() {});
+                        },
+                      ),
+                      const Expanded(
+                        child: Text(
+                          'Allow scheduled safety checks without prompting (auto-consent). Permissions are still required.',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            if (widget.sessionId != null)
+              FutureBuilder<String?>(
+                future: _latestBlockedSafetyStatus(widget.sessionId!),
+                builder: (context, snapshot) {
+                  final status = snapshot.data;
+                  if (status == null) return const SizedBox.shrink();
+                  return Row(
+                    children: [
+                      Text('Blocked awaiting consent: $status', style: const TextStyle(fontSize: 12, color: Colors.orange)),
+                      const SizedBox(width: 8),
+                      TextButton(
+                        onPressed: () async {
+                          await ref.read(cronServiceProvider).runSafetyCheckNow(
+                                agentId: widget.agentId!,
+                                sessionId: widget.sessionId!,
+                                channelId: 'mobile-chat',
+                                modeOverride: _mode,
+                                replayCheckId: status,
+                              );
+                          ref.invalidate(timelineProvider);
+                        },
+                        child: const Text('Run manually now'),
+                      ),
+                    ],
+                  );
+                },
+              ),
             if (_lastSnapshotSummary != null) Text(_lastSnapshotSummary!, style: const TextStyle(fontSize: 12)),
             configuredAsync.when(
               data: (configured) {
@@ -1424,6 +1481,21 @@ class _CameraGatewaySettingsCardState extends ConsumerState<_CameraGatewaySettin
     ref.invalidate(timelineProvider);
     ref.invalidate(agentsProvider);
     ref.invalidate(configuredCamerasProvider);
+  }
+
+  Future<String?> _latestBlockedSafetyStatus(String sessionId) async {
+    final items = await ref.read(databaseProvider).listTimelineBySession(sessionId);
+    for (final item in items.reversed) {
+      if (item.event.type != EventType.cron || item.event.payload['workflow']?.toString() != 'safety_check') {
+        continue;
+      }
+      final runs = await ref.read(databaseProvider).listRunResultsByEvent(item.event.id);
+      if (runs.isEmpty) continue;
+      if (runs.first.output.contains('blocked awaiting consent')) {
+        return item.event.payload['checkId']?.toString() ?? 'unknown-check';
+      }
+    }
+    return null;
   }
 }
 

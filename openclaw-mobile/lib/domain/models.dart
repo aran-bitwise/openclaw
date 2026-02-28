@@ -354,10 +354,12 @@ class AgentProfile implements VersionedEntity {
     HeartbeatSettings? heartbeat,
     HookSettings? hooks,
     HandoffSettings? handoff,
+    SafetySettings? safety,
     this.schemaVersion = 4,
   }) : heartbeat = heartbeat ?? HeartbeatSettings.disabled(),
        hooks = hooks ?? HookSettings.defaults(),
-       handoff = handoff ?? HandoffSettings.defaults();
+       handoff = handoff ?? HandoffSettings.defaults(),
+       safety = safety ?? SafetySettings.defaults();
 
   final String id;
   final String name;
@@ -365,6 +367,7 @@ class AgentProfile implements VersionedEntity {
   final HeartbeatSettings heartbeat;
   final HookSettings hooks;
   final HandoffSettings handoff;
+  final SafetySettings safety;
   @override
   final int schemaVersion;
 
@@ -381,6 +384,9 @@ class AgentProfile implements VersionedEntity {
     handoff: json['handoff'] is Map
         ? HandoffSettings.fromJson(Map<String, dynamic>.from(json['handoff'] as Map))
         : HandoffSettings.defaults(),
+    safety: json['safety'] is Map
+        ? SafetySettings.fromJson(Map<String, dynamic>.from(json['safety'] as Map))
+        : SafetySettings.defaults(),
     schemaVersion: (json['schemaVersion'] as int?) ?? 1,
   );
 
@@ -392,10 +398,17 @@ class AgentProfile implements VersionedEntity {
     'heartbeat': heartbeat.toJson(),
     'hooks': hooks.toJson(),
     'handoff': handoff.toJson(),
+    'safety': safety.toJson(),
     'schemaVersion': schemaVersion,
   };
 
-  AgentProfile copyWith({String? name, HeartbeatSettings? heartbeat, HookSettings? hooks, HandoffSettings? handoff}) {
+  AgentProfile copyWith({
+    String? name,
+    HeartbeatSettings? heartbeat,
+    HookSettings? hooks,
+    HandoffSettings? handoff,
+    SafetySettings? safety,
+  }) {
     return AgentProfile(
       id: id,
       name: name ?? this.name,
@@ -403,8 +416,27 @@ class AgentProfile implements VersionedEntity {
       heartbeat: heartbeat ?? this.heartbeat,
       hooks: hooks ?? this.hooks,
       handoff: handoff ?? this.handoff,
+      safety: safety ?? this.safety,
       schemaVersion: schemaVersion,
     );
+  }
+}
+
+class SafetySettings {
+  const SafetySettings({required this.safetyCheckAutoConsentEnabled});
+
+  final bool safetyCheckAutoConsentEnabled;
+
+  factory SafetySettings.defaults() => const SafetySettings(safetyCheckAutoConsentEnabled: false);
+
+  factory SafetySettings.fromJson(Map<String, dynamic> json) {
+    return SafetySettings(safetyCheckAutoConsentEnabled: json['safetyCheckAutoConsentEnabled'] as bool? ?? false);
+  }
+
+  Map<String, dynamic> toJson() => {'safetyCheckAutoConsentEnabled': safetyCheckAutoConsentEnabled};
+
+  SafetySettings copyWith({bool? safetyCheckAutoConsentEnabled}) {
+    return SafetySettings(safetyCheckAutoConsentEnabled: safetyCheckAutoConsentEnabled ?? this.safetyCheckAutoConsentEnabled);
   }
 }
 

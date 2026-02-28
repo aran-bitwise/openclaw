@@ -15,6 +15,7 @@ import '../application/runtime_service.dart';
 import '../application/safety_check_service.dart';
 import '../application/tool_registry.dart';
 import '../application/tooling_service.dart';
+import '../application/workflow_dispatcher.dart';
 import '../domain/models.dart';
 import '../infrastructure/app_database.dart';
 import '../infrastructure/relay_client.dart';
@@ -56,6 +57,7 @@ final queueProcessorProvider = Provider<QueueProcessor>((ref) {
     memoryService: ref.read(memoryServiceProvider),
     toolingService: ref.read(toolingServiceProvider),
     safetyCheckService: ref.read(safetyCheckServiceProvider),
+    workflowDispatcher: ref.read(workflowDispatcherProvider),
   );
 });
 
@@ -89,6 +91,18 @@ final toolingServiceProvider = Provider<ToolingService>((ref) {
 
 final safetyCheckServiceProvider = Provider<SafetyCheckService>((ref) {
   return SafetyCheckService(ref.watch(databaseProvider), ref.watch(toolingServiceProvider), ref.watch(clockProvider));
+});
+
+final workflowDispatcherProvider = Provider<WorkflowDispatcher>((ref) {
+  final safety = ref.watch(safetyCheckServiceProvider);
+  return WorkflowDispatcher(
+    handlers: {
+      'safety_check': (event, session) async {
+        final outcome = await safety.runSafetyCheck(event: event, session: session);
+        return WorkflowDispatchResult(handled: true, output: outcome);
+      },
+    },
+  );
 });
 
 

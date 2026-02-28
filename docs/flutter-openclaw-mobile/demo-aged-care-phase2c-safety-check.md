@@ -7,30 +7,43 @@ Phase 2C reuses `EventType.cron` with an explicit workflow marker in payload:
 ```json
 {
   "workflow": "safety_check",
+  "trigger": "scheduled|manual",
   "scheduleId": "safety-check-...",
+  "checkId": "check:<scheduleId>:<mode>:<minuteBucket>",
   "modeOverride": "test_ok|test_fall|test_uncertain|latest",
   "toolConsentApproved": true
 }
 ```
 
-`modeOverride` is optional and is used for deterministic demos.
+## Consent policy for scheduled and manual runs
+
+- Manual safety check runs can use interactive consent and set `toolConsentApproved=true`.
+- Scheduled runs never trigger UI modals.
+- Per-agent setting: `safetyCheckAutoConsentEnabled` (default `false`).
+  - `false`: scheduled safety check produces `BLOCKED_AWAITING_CONSENT` outcome and completes without tool execution.
+  - `true`: medium-risk safety tools are auto-approved for consent only (permissions still required).
+- Audit semantics:
+  - manual approved: `permission granted + runtime consent approved`
+  - scheduled auto-approved: `auto_approved_by_setting`
+  - blocked: no tool execution records for that check.
 
 ## Orchestration and idempotency strategy
 
 Safety checks run through the existing queue path:
 
 1. Cron (or manual run helper) enqueues a cron event with `workflow=safety_check`.
-2. `QueueProcessor` detects this workflow and delegates to `SafetyCheckService`.
-3. `SafetyCheckService` iterates enabled `configured_cameras`.
-4. For each camera:
-   - invoke `tool.cameraSnapshot`
-   - invoke `tool.fallDetect`
-5. Aggregate per-camera findings into overall verdict.
-6. Persist run result + memory writes + tool audits.
+2. `QueueProcessor` sends workflow events to a `WorkflowDispatcher`.
+3. `WorkflowDispatcher` routes `safety_check` to `SafetyCheckService`.
+4. `SafetyCheckService` iterates enabled `configured_cameras`.
+5. For each camera:
+   - invoke `tool.cameraSnapshot` with idempotency `safety:<checkId>:<cameraId>:snapshot`
+   - invoke `tool.fallDetect` with idempotency `safety:<checkId>:<cameraId>:detect`
+6. Aggregate per-camera findings into overall verdict and summary.
+7. Persist run result + memory writes + tool audits.
 
 Idempotency:
-- scheduled runs: existing `cron-<scheduleId>-<minuteBucket>` key
-- manual runs: `safety-manual-<sessionId>-<mode>-<minuteBucket>` key
+- scheduled runs: `checkId` derived from `scheduleId + mode + minute bucket`
+- manual runs: `checkId` derived from `safety-manual + mode + minute bucket` or explicit replay `checkId`
 
 ## fallDetect stub behavior
 
@@ -41,12 +54,25 @@ Idempotency:
 
 This is a placeholder that will be replaced by real inference later.
 
+## Per-camera failure handling rules
+
+Each camera always produces a finding:
+- `status`: `ok|uncertain|fall_suspected|error`
+- `errorType`: `offline|unauthorized|timeout|http_error|unknown` when status is `error`
+- `errorMessage`: short safe message (no token/secret)
+
+Overall verdict:
+- any `fall_suspected` => `fall_suspected`
+- else any `uncertain` or any `error` => `uncertain`
+- else `ok`
+
 ## Memory usage and provenance
 
 Phase 2C writes a structured session-scoped memory entry for each safety check run containing:
+- `checkId`, `trigger`, `mode`, `autoConsentUsed`
 - overall verdict
-- per-camera findings (`cameraId`, `verdict`, `confidence`, `checksumPrefix`, `capturedAt`)
-- timestamp and summary
+- per-camera findings (`cameraId`, `status`, `verdict`, `confidence`, `checksumPrefix`, `capturedAt`, error fields)
+- top-level summary and timestamp
 
 Provenance fields are populated via existing memory pipeline:
 - `sourceEventId`
@@ -61,13 +87,15 @@ Provenance fields are populated via existing memory pipeline:
 sequenceDiagram
   participant Cron
   participant Queue as QueueProcessor
+  participant Dispatcher as WorkflowDispatcher
   participant Safety as SafetyCheckService
   participant Tools as ToolingService
   participant Memory as MemoryService/DB
   participant Inspector
 
   Cron->>Queue: enqueue cron event (workflow=safety_check)
-  Queue->>Safety: runSafetyCheck(event, session)
+  Queue->>Dispatcher: dispatch(workflow)
+  Dispatcher->>Safety: runSafetyCheck(event, session)
   Safety->>Tools: tool.cameraSnapshot(camera)
   Safety->>Tools: tool.fallDetect(snapshotUrl)
   Safety-->>Queue: aggregate verdict + summary
@@ -77,17 +105,18 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
+  participant Cron
+  participant Queue
+  participant Safety as SafetyCheckService
   actor User
   participant UI
-  participant Cron as CronService
-  participant Queue as QueueProcessor
-  participant Safety as SafetyCheckService
 
-  User->>UI: Run safety check now (mode=test_fall)
-  UI->>Cron: runSafetyCheckNow(modeOverride=test_fall)
-  Cron->>Queue: enqueue cron event with modeOverride
-  Queue->>Safety: orchestrate cameras + fallDetect
-  Safety-->>UI: timeline shows Safety Check Run
+  Cron->>Queue: scheduled safety check event
+  Queue->>Safety: runSafetyCheck(trigger=scheduled)
+  Safety-->>Queue: BLOCKED_AWAITING_CONSENT (auto-consent disabled)
+  User->>UI: Tap "Run manually now"
+  UI->>Queue: manual safety event with replay checkId
+  Queue->>Safety: runSafetyCheck(trigger=manual, consent=true)
 ```
 
 ## Manual Android emulator validation
@@ -103,8 +132,16 @@ sequenceDiagram
    - `camera:list`
    - `camera:read`
    - `safety:detect`
-5. Run **Run safety check now** in `test_ok` mode, then `test_fall` mode.
-6. Open inspector for each safety-check timeline event and verify:
+5. With auto-consent toggle OFF:
+   - wait for scheduled check (or run schedule now)
+   - verify timeline shows blocked awaiting consent
+   - tap **Run manually now** and verify check executes
+6. With auto-consent toggle ON:
+   - trigger scheduled run
+   - verify tools execute without modal
+   - verify audit reason includes `auto_approved_by_setting`
+7. Open inspector for safety-check events and verify:
+   - trigger type (`scheduled` or `manual`) and checkId context
    - tool chain includes `tool.cameraSnapshot` + `tool.fallDetect`
-   - memory write exists with structured safety-check content
+   - memory write contains structured findings and any errors
    - audit entries remain redacted (no token, no image bytes).

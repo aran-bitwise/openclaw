@@ -213,5 +213,11 @@ class RuntimeService {
     await _db.upsertAgent(agent.copyWith(handoff: settings));
   }
 
+  Future<void> updateSafetySettings(String agentId, SafetySettings settings) async {
+    final agent = await _db.getAgent(agentId);
+    if (agent == null) return;
+    await _db.upsertAgent(agent.copyWith(safety: settings));
+  }
+
   Future<bool> retryEvent(String eventId) => _db.retryEvent(eventId);
 }

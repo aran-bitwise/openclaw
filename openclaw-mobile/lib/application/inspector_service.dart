@@ -104,6 +104,10 @@ class InspectorService {
     if (event.payload['parentEventId'] != null) {
       return 'Triggered by parent event ${event.payload['parentEventId']}';
     }
+    if (event.type == EventType.cron && event.payload['workflow']?.toString() == 'safety_check') {
+      final trigger = event.payload['trigger']?.toString() ?? 'scheduled';
+      return 'Safety check ($trigger) checkId=${event.payload['checkId'] ?? 'n/a'}';
+    }
     return 'No ancestry metadata recorded';
   }
 
@@ -143,6 +147,8 @@ class InspectorService {
         'tool ${audit.toolId}: ${audit.decisionAllowed ? 'allowed' : 'blocked'} (${audit.decisionReason})',
       if (reads.isNotEmpty) 'memory read count=${reads.length}',
       if (writes.isNotEmpty) 'memory write count=${writes.length}',
+      if (event.type == EventType.cron && event.payload['workflow']?.toString() == 'safety_check')
+        'safety check trigger=${event.payload['trigger'] ?? 'scheduled'}, autoConsent=${event.payload['trigger'] == 'scheduled'}',
       if (runs.isNotEmpty) 'completed with ${runs.length} run result(s)',
     ];
     return steps;

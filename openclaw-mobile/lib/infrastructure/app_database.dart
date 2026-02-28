@@ -27,6 +27,7 @@ class AppDatabase extends GeneratedDatabase {
         heartbeat_json TEXT,
         hook_json TEXT,
         handoff_json TEXT,
+        safety_json TEXT,
         schema_version INTEGER NOT NULL
       )
     ''');
@@ -38,6 +39,9 @@ class AppDatabase extends GeneratedDatabase {
     }
     if (!await _hasColumn('agents', 'handoff_json')) {
       await customStatement('ALTER TABLE agents ADD COLUMN handoff_json TEXT');
+    }
+    if (!await _hasColumn('agents', 'safety_json')) {
+      await customStatement('ALTER TABLE agents ADD COLUMN safety_json TEXT');
     }
 
     await customStatement('''
@@ -239,7 +243,7 @@ class AppDatabase extends GeneratedDatabase {
 
   Future<void> upsertAgent(AgentProfile profile) async {
     await customStatement(
-      'INSERT OR REPLACE INTO agents (id,name,created_at,heartbeat_json,hook_json,handoff_json,schema_version) VALUES (?,?,?,?,?,?,?)',
+      'INSERT OR REPLACE INTO agents (id,name,created_at,heartbeat_json,hook_json,handoff_json,safety_json,schema_version) VALUES (?,?,?,?,?,?,?,?)',
       [
         profile.id,
         profile.name,
@@ -247,6 +251,7 @@ class AppDatabase extends GeneratedDatabase {
         jsonEncode(profile.heartbeat.toJson()),
         jsonEncode(profile.hooks.toJson()),
         jsonEncode(profile.handoff.toJson()),
+        jsonEncode(profile.safety.toJson()),
         profile.schemaVersion,
       ],
     );
@@ -279,6 +284,10 @@ class AppDatabase extends GeneratedDatabase {
     final handoff = rawHandoff == null
         ? HandoffSettings.defaults()
         : HandoffSettings.fromJson(Map<String, dynamic>.from(jsonDecode(rawHandoff) as Map));
+    final rawSafety = row.read<String?>('safety_json');
+    final safety = rawSafety == null
+        ? SafetySettings.defaults()
+        : SafetySettings.fromJson(Map<String, dynamic>.from(jsonDecode(rawSafety) as Map));
 
     return AgentProfile(
       id: row.read<String>('id'),
@@ -287,6 +296,7 @@ class AppDatabase extends GeneratedDatabase {
       heartbeat: heartbeat,
       hooks: hooks,
       handoff: handoff,
+      safety: safety,
       schemaVersion: row.read<int>('schema_version'),
     );
   }

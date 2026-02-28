@@ -37,7 +37,7 @@ class CronService {
           scheduleId: schedule.scheduleId,
           dueAt: dueAt,
           idempotencyKey: idempotencyKey,
-          extraPayload: _isSafetySchedule(schedule) ? const {'workflow': 'safety_check', 'toolConsentApproved': true} : null,
+          extraPayload: _isSafetySchedule(schedule) ? _safetyPayload(scheduleId: schedule.scheduleId, dueAt: dueAt, mode: 'latest', trigger: 'scheduled', consentApproved: false) : null,
         );
 
         mutable = mutable.copyWith(lastRunAt: dueAt, nextRunAt: _nextOccurrence(schedule.rule, dueAt));
@@ -85,7 +85,7 @@ class CronService {
       scheduleId: schedule.scheduleId,
       dueAt: dueAt,
       idempotencyKey: idempotencyKey,
-      extraPayload: _isSafetySchedule(schedule) ? const {'workflow': 'safety_check', 'toolConsentApproved': true} : null,
+      extraPayload: _isSafetySchedule(schedule) ? _safetyPayload(scheduleId: schedule.scheduleId, dueAt: dueAt, mode: 'latest', trigger: 'scheduled', consentApproved: false) : null,
     );
 
     if (inserted) {
@@ -118,6 +118,7 @@ class CronService {
     required String sessionId,
     required String channelId,
     String modeOverride = 'latest',
+    String? replayCheckId,
   }) async {
     final dueAt = _clock.now().millisecondsSinceEpoch;
     final bucket = dueAt ~/ 60000;
@@ -130,7 +131,10 @@ class CronService {
       scheduleId: 'safety-manual',
       dueAt: dueAt,
       idempotencyKey: idempotencyKey,
-      extraPayload: {'workflow': 'safety_check', 'modeOverride': modeOverride, 'toolConsentApproved': true},
+      extraPayload: {
+        ..._safetyPayload(scheduleId: 'safety-manual', dueAt: dueAt, mode: modeOverride, trigger: 'manual', consentApproved: true),
+        if (replayCheckId != null) 'checkId': replayCheckId,
+      },
     );
     if (inserted) {
       await _processor.tick();
@@ -139,6 +143,29 @@ class CronService {
 
   bool _isSafetySchedule(CronSchedule schedule) {
     return schedule.scheduleId.startsWith('safety-check-') || schedule.promptTemplate.toLowerCase().contains('safety check');
+  }
+
+
+
+  Map<String, dynamic> _safetyPayload({
+    required String scheduleId,
+    required int dueAt,
+    required String mode,
+    required String trigger,
+    required bool consentApproved,
+  }) {
+    return {
+      'workflow': 'safety_check',
+      'trigger': trigger,
+      'modeOverride': mode,
+      'checkId': _checkId(scheduleId: scheduleId, dueAt: dueAt, mode: mode),
+      'toolConsentApproved': consentApproved,
+    };
+  }
+
+  String _checkId({required String scheduleId, required int dueAt, required String mode}) {
+    final bucket = dueAt ~/ 60000;
+    return 'check:$scheduleId:$mode:$bucket';
   }
 
   List<int> _resolveDueTimes(CronSchedule schedule, DateTime now) {

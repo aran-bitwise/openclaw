@@ -6,6 +6,7 @@ import 'clock.dart';
 import 'memory_service.dart';
 import 'safety_check_service.dart';
 import 'tooling_service.dart';
+import 'workflow_dispatcher.dart';
 
 typedef EventRunner = Future<String> Function(Event event);
 typedef TurnHook = Future<void> Function(Event event, Session session, {bool? success});
@@ -22,6 +23,7 @@ class QueueProcessor {
     this.memoryService,
     this.toolingService,
     this.safetyCheckService,
+    this.workflowDispatcher,
   }) : _runner = runner;
 
   final AppDatabase _db;
@@ -33,6 +35,7 @@ class QueueProcessor {
   final MemoryService? memoryService;
   final ToolingService? toolingService;
   final SafetyCheckService? safetyCheckService;
+  final WorkflowDispatcher? workflowDispatcher;
   final _uuid = const Uuid();
 
   Future<void> tick() async {
@@ -61,8 +64,13 @@ class QueueProcessor {
               session,
               consentApproved: event.payload['toolConsentApproved'] == true,
             );
-      final safetyOutcome = await _maybeRunSafetyCheck(event, session);
-      final rawOutput = safetyOutcome?.summary ?? await (_runner?.call(event) ?? _stubRun(event));
+      final workflowOutput = await _maybeRunWorkflow(event, session);
+      final safetyOutcome = workflowOutput is SafetyCheckOutcome ? workflowOutput : null;
+      final rawOutput = workflowOutput is SafetyCheckOutcome
+          ? workflowOutput.summary
+          : workflowOutput is String
+              ? workflowOutput
+              : await (_runner?.call(event) ?? _stubRun(event));
       final output = toolExecution == null
           ? rawOutput
           : '$rawOutput\nTool ${toolExecution.invocation.toolId}: ${toolExecution.invocation.outcome} (${toolExecution.invocation.decisionReason})';
@@ -88,7 +96,11 @@ class QueueProcessor {
               scope: MemoryScope.session,
               scopeId: session.id,
               entryType: MemoryEntryType.fact,
-              content: safetyOutcome.toMemoryContent(at: _clock.now()),
+              content: safetyOutcome.toMemoryContent(
+                at: _clock.now(),
+                mode: event.payload['modeOverride']?.toString() ?? 'latest',
+                scheduled: event.payload['trigger']?.toString() != 'manual',
+              ),
               sourceEventId: event.id,
               sourceRunId: runResult.id,
               sourceAgentId: session.agentId,
@@ -137,16 +149,12 @@ class QueueProcessor {
     }
   }
 
-  Future<SafetyCheckOutcome?> _maybeRunSafetyCheck(Event event, Session? session) async {
-    if (session == null || safetyCheckService == null) return null;
+  Future<Object?> _maybeRunWorkflow(Event event, Session? session) async {
+    if (session == null || workflowDispatcher == null) return null;
     if (event.type != EventType.cron) return null;
-    if (event.payload['workflow']?.toString() != 'safety_check') return null;
-    return safetyCheckService!.runSafetyCheck(
-      event: event,
-      session: session,
-      consentApproved: event.payload['toolConsentApproved'] == true,
-      modeOverride: event.payload['modeOverride']?.toString(),
-    );
+    final result = await workflowDispatcher!.dispatch(event, session);
+    if (!result.handled) return null;
+    return result.output;
   }
 
   Future<void> _applyHeartbeatSuppressionIfNeeded(Event event, String output) async {
